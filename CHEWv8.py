@@ -1137,7 +1137,7 @@ for r in ranks[::-1]:
                 
                 if d<2:   #too small increase
                     break
-                if d==d1: #linear regime
+                if d==d1: #linear regime, should make this: "linearish"
                     break
                 
                 if (l/ul)>0.95:
@@ -1159,13 +1159,31 @@ for r in ranks[::-1]:
 
 ja=edf[["genus","taxa"]].drop_duplicates().groupby("genus").size()
 
+#%% Final search
+
+# output_folder="final_search"
+# unclustered_db="H:/Databases/GTDB/GTDB_merged_NoAmb_IJeqL.fasta"
+# db=filter_Database_taxonomy(Database=unclustered_db,taxids=tax, taxonomy=taxonomy, output_file="FINAL.fa",
+#             output_folder=output_folder)
+
+write_decoy(db,method="reverse",output_folder=output_folder)
+
+#%%
+target="C:/MP-CHEW/CHEW/final_search/FINAL.fa"
+decoy="C:/MP-CHEW/CHEW/final_search/decoy.fa"
+d=merge_target_decoy(target, decoy)
+
 #%%
 
-output_folder="final_search"
-unclustered_db="H:/Databases/GTDB/GTDB_merged_NoAmb_IJeqL.fasta"
-db=filter_Database_taxonomy(Database=unclustered_db,taxids=tax, taxonomy=taxonomy, output_file="FINAL.fa",
-            output_folder=output_folder)
-            
+
+
+MSFragger_files=MSFragger_annotation(mzML_files,
+                                    database_path="C:/MP-CHEW/CHEW/final_search/target_decoy.fa",
+                                    output_folder=output_folder,
+                                    params_path=params_mid,
+                                    no_splits=2,
+                                    no_batches=1)
+
 
 #%%
 # #%%
