@@ -1184,6 +1184,8 @@ MSFragger_files=MSFragger_annotation(mzML_files,
                                     no_splits=2,
                                     no_batches=1)
 
+#%%
+write_database_composition(target,output_folder=output_folder,taxonomy=taxonomy)
 
 #%%
 # #%%
