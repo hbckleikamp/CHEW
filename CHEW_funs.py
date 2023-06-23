@@ -8,7 +8,7 @@ Created on Thu Jun 15 13:26:43 2023
 #Modules
 
 
-import argparse
+
 import Bio
 from Bio import SeqIO
 
@@ -25,13 +25,16 @@ import time
 from collections import Counter
 import itertools
 import more_itertools as mit
-
+import inspect
+import datetime
 from pathlib import Path
 import os
 
-#### Global variables ###
+#local module
+from load_vars import *
 
-#import kws from main instead of defining placeholder variables?
+#### function variables ###
+
 from inspect import getsourcefile
 os.chdir(str(Path(os.path.abspath(getsourcefile(lambda:0))).parents[0])) # set base path
 basedir=os.getcwd()
@@ -46,17 +49,27 @@ pep_split_path=str(Path(basedir,"msfragger_pep_split_HK.py"))
 
 
 
-
 ranks=np.array(["superkingdom","phylum","class","order","family","genus","species"]) 
 
 IO_batch=10**6 #how much lines should be written or read at once from a fasta file 
 diamond_output_columns=["qseqid","sseqid","stitle","bitscore","full_sseq"]
 taxdf=""
 
+#kws="python scope is stupid"
 
-#load in taxdf and simple masks
+#from raw2fasta_test import kws  
+#kws=""
+
+
+import glob
+list_of_files = glob.glob(str(Path(basedir,"*.CHEW_params"))) 
+latest_file   = max(list_of_files, key=os.path.getctime)
+kws=load_variables(latest_file)
+
 
 ####
+
+
 
 #### Overcomplicated stuff for handling arg passing into functions ###
 
@@ -68,8 +81,6 @@ class function_variables(): #function variables
         self.Temporary_directory=basedir
         self.basedir=basedir
 
-import inspect
-import datetime
 
 def dargs(func):
     signature = inspect.signature(func)
@@ -82,7 +93,11 @@ def dargs(func):
 
 def passed_kwargs():
 
-    def decorator(function):
+  
+
+    def decorator(function,
+                  kws=kws
+                  ):
         def inner(*args, **kwargs):
             
             class_instance=function_variables()
@@ -91,16 +106,18 @@ def passed_kwargs():
             
             #can also try to update kws each time a function is run?
             class_instance.__dict__.update(dargs(function))
-            if "kws" in kwargs.keys():
-                class_instance.__dict__.update(kwargs.get("kws"))
+            class_instance.__dict__.update(kws)
             class_instance.__dict__.update(kwargs)
             
             ### some other general functions ###
 
             #parse output_folders
             output_folder,tmp_folder,Output_directory,Temporary_directory,basedir=class_instance.output_folder,class_instance.tmp_folder,class_instance.Output_directory,class_instance.Temporary_directory,class_instance.basedir
+            
+
+            
             if not os.path.isabs(output_folder): output_folder=str(Path(basedir,Output_directory,output_folder))
-            if not os.path.isabs(tmp_folder): output_folder=str(Path(basedir,Temporary_directory,tmp_folder))
+            if not os.path.isabs(tmp_folder):       tmp_folder=str(Path(basedir,Temporary_directory,tmp_folder))
             class_instance.output_folder=output_folder
             class_instance.tmp_folder=tmp_folder 
                 
@@ -124,40 +141,7 @@ def passed_kwargs():
     return decorator
 
 
-def read_table(tabfile,*,
-               Keyword=False, # "Value" or "Peptide" (Keyword is used in dynamic delimiter deetection)
-               ):
-    
-    tab=pd.DataFrame()
-    if tabfile.endswith('.txt'):                        
-        with open(tabfile,"r") as f: 
-            tab=pd.DataFrame(f.readlines())
-    
-    if tabfile.endswith('.csv'): tab=pd.read_csv(tabfile,sep=",")
-    if tabfile.endswith('.tsv'):                               tab=pd.read_csv(tabfile,sep="\t")
-    if tabfile.endswith('.xlsx') or tabfile.endswith('.xls'): tab=pd.read_excel(tabfile,engine='openpyxl')   
-   
-        
-    #dynamic delimiter detection
-    #if file delimiter is different, split using different delimiters until the desired column name is found
-    if Keyword:
-        if Keyword not in tab.columns: 
-            delims=[i[0] for i in Counter([i for i in str(tab.iloc[0]) if not i.isalnum()]).most_common()]
-            for delim in delims:
-                if delim==" ": delim="\s"
-                try:
-                    tab=pd.read_csv(tabfile,sep=delim)
-                    if Keyword in tab.columns:
-                        break
-                except:
-                    pass
-                
-    return tab
-    
-def load_variables(file):
-    tab=read_table(file,Keyword="Variable") #requires 
-    return tab.set_index("Variable").to_dict()
-    
+
 
 def isiterable(e):
     try:
@@ -172,10 +156,9 @@ def check_required_args(v,l): #list of strs
             e=getattr(v,i)
             if isiterable(e):
                 if len(e)==0:
-                    print(i+": "+e+" is a required argument, and is not defined properly!" )
-        except:
-            print(i+": is a required argument, and is not defined properly!" )
-         
+                    raise Exception ("the variable '"+i+"' is a required argument, and is not defined properly! (variable is empty)" )
+        except AttributeError as err:
+            raise Exception ("the variable '"+i+"' is a required argument, and is not defined properly! (variable name does not exist)" )
 
 
    
@@ -195,36 +178,61 @@ def test(**kwargs):
 
 @passed_kwargs()
 def raw2mzML(*,output_folder="mzML",**kwargs): 
+    
     v=raw2mzML.vars #parse function arguments
-    
     output_folder=v.output_folder
-    raw_file=v.raw_file
+    input_files=v.input_files
+    check_required_args(v,["input_files"])
 
-    command="cd" +' "'+output_folder+'" && msconvert '
-    command+='"'+raw_file+'"' 
-    command+=' --mzML --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
-    print(command)
-    stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+    if type(input_files)==str:
+        input_files=input_files.split()
+    if type(input_files)==str:
+        input_files=[input_files]
     
-    output_file=str(Path(output_folder,Path(raw_file).stem+".mzML"))
-    return output_file
+    output_files=[]
+    for input_file in input_files:
+        
+        output_file=str(Path(output_folder,Path(input_file).stem+".mzML"))
+        output_files.append(output_file)
+        
+        if not output_file.endswith(".mzML"):
+            command="cd" +' "'+output_folder+'" && msconvert '
+            command+='"'+input_file+'"' 
+            command+=' --mzML --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
+            print(command)
+            stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+            
+    return output_files
 
 @passed_kwargs()
 def raw2mgf(*,output_folder="mgf",**kwargs):
-    v=raw2mzML.vars #parse function arguments
     
+    v=raw2mgf.vars #parse function arguments
     output_folder=v.output_folder
-    raw_file=v.raw_file
-
-    command="cd" +' "'+output_folder+'" && msconvert '
-    command+='"'+raw_file+'"' 
-    command+=' --mgf --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
-    print(command)
-    stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+    input_files=v.input_files
+    check_required_args(v,["input_files"])
     
-    output_file=str(Path(output_folder,Path(raw_file).stem+".mgf"))
-    reformat_mfg(output_file)
-    return output_file
+    if type(input_files)==str:
+        input_files=input_files.split()
+    if type(input_files)==str:
+        input_files=[input_files]
+    
+    output_files=[]
+    for input_file in input_files:
+        output_file=str(Path(output_folder,Path(input_file).stem+".mgf"))
+        output_files.append(output_file)
+        if not output_file.endswith(".mgf"):
+        
+            command="cd" +' "'+output_folder+'" && msconvert '
+            command+='"'+input_file+'"' 
+            command+=' --mgf --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
+            print(command)
+            stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+            
+        
+        reformat_mfg(output_file)
+        
+    return output_files
 
 
 
@@ -244,7 +252,7 @@ def MSFragger_annotation(*,
     #required arg
     input_files=v.input_files   
     database_path=v.database_path
-    check_required_args(v,["intput_file","database_path"])
+    check_required_args(v,["input_files","database_path"])
     
     #default args
     output_folder,tmp_folder=v.output_folder,v.tmp_folder
@@ -286,12 +294,14 @@ def MSFragger_annotation(*,
         if os.path.exists(str(Path(tmp_folder,"split_peptide_index_tempdir"))): shutil.rmtree(str(Path(tmp_folder,"split_peptide_index_tempdir"))) 
         JavaMem=int(psutil.virtual_memory().available/10**9*0.8) #check available RAM
         
-        if no_splits==None:
+        if not no_splits:
             no_splits=math.ceil(os.path.getsize(database_path)/10**9*150/JavaMem) #starting number of splits for db splitting, database size*150 is an estimated scaling factor, which will be effected by the number of allowed modifications and missed cleavages
         
-        if no_batches==None:
+        if not no_batches:
             no_batches=int(psutil.disk_usage(Path(pep_split_path).anchor).free/10**9/os.path.getsize(database_path)) #number of files annotated per time
+        if not no_batches>0: no_batches=1
         batches=np.array_split(input_files, math.ceil(no_batches))
+        
 
         print("running MSFragger, total number of splits: "+str(no_splits)+" , total number of batches: "+str(len(batches))+", Java Heap: "+str(JavaMem))
         
@@ -422,8 +432,7 @@ def write_to_Diamond_fasta(*,
                            header_info=[],         #information columns that should be retained in the fasta header
                            unique_peptides=True,   #only write unique combinations of header and peptide
                            min_length=4,           #minimum tag length
-                           output_file=None,       #if all are to be written to the same output file, put filename here, otherwise they are written to separate files
-                           
+                           output_file="peplist",  #output_file name
                            **kwargs
                            ):
        
@@ -449,10 +458,8 @@ def write_to_Diamond_fasta(*,
  
  
     #remove output file to prevent overappending to existing file
-
-    if output_file!=None:
-        out_path=str(Path(output_folder,Path(output_file).stem+".fa"))
-        if os.path.exists(out_path): os.remove(out_path)
+    out_path=str(Path(output_folder,Path(output_file).stem+".fa"))
+    if os.path.exists(out_path): os.remove(out_path)
     
     output_paths=[]
     if type(input_files)!=type(list()):
@@ -516,9 +523,6 @@ def write_to_Diamond_fasta(*,
         pepdf["dict"]="{"+("'"+hdict.columns+"'"+":"+hdict).apply(",".join,axis=1)+"}" 
         
         #Writing output
-        if output_file==None:
-            out_path=str(Path(output_folder,Path(input_file).stem+".fa"))
-        output_paths.append(out_path)  
         if unique_peptides:
             pepdfs.append(pepdf[["tag","dict"]])
         else:
@@ -531,7 +535,7 @@ def write_to_Diamond_fasta(*,
             f.write("\n".join(">"+pepdf["tag"]+";"+pepdf["dict"]+"\n"+pepdf["tag"])+"\n")
 
 
-    return list(set(output_paths))
+    return out_path
 
 #function to parse tabular Peptide files
 @passed_kwargs()
@@ -546,6 +550,9 @@ def parse_peplist(*,
     v=parse_peplist.vars #parse function arguments
     input_file=v.input_file #required argument
     check_required_args(v,["input_file"])
+    
+    
+    #rewrite this to parse multiple files
     
     if  is_fasta(input_file): #do nothing
         return input_file
@@ -869,25 +876,56 @@ def filter_database_proteins(*,output_file="fp_target.fa",
 #%%
 
 
-def refine_database():
+def refine_database(input_files):
 
+    #required files mzML files, database
+
+    v=refine_database.vars #parse function arguments
     
+    input_files=v.input_files
+    database_path=v.database_path
+    check_required_args(v,["input_files","database_path"]) #taxids can be empty
+
+    #MSFragger params
+    params_path=params_mid,
+    no_splits=2,
+    no_batches=1    
 
 
-    weight_rank="species"
-    max_evalue=10
-    Precision_prefilter=0 # 0.7 Target Decoy precision based denoising pre LCA filter
+    #MSFragger score filters
+    max_evalue=10,
+    Top_score_fraction=0.9, #in case of multiple top candidates retain the top scoring fraction
+    
+    #Pre LCA filter
     Frequency_prefilter=0 # 2   Static prefiler cutoff
-    Top_score_fraction=0.9
-    weight_cutoff=0.6
+    Precision_prefilter=0 # 0.7 Target Decoy precision based denoising pre LCA filter
+
+    #focusing LCA parameters
+    weight_rank="species"
+    weight_cutoff=0.6   
     
+    #Post LCA representative picking
+    min_count=2,
+    min_ratio=0.99, 
+    remove=False,
+    denoise_ranks=ranks.tolist()
+    
+    
+    #general parameters
+    
+    min_rate=0.95
     output_folder="refine"
 
     
-    DB_in_mem=load_full_db(target)
-    composition,richness,entries=write_database_composition(Database)
+    #make raw to mzml if supplied files are raw
+
+
+    DB_in_mem=load_full_db(database_path)
+    composition,richness,entries=write_database_composition(database_path)
     
-    Initial_Database,Initial_entries=target,entries #backup since cycle overwrites utarget,entries
+    #variable name backup since cycle overwrites utarget,entries
+    Initial_Database,Initial_entries=database_path,entries
+    
     decoy=write_decoy(Initial_Database,output_folder=output_folder)
     Database=merge_files([Initial_Database,decoy])
     
@@ -907,14 +945,14 @@ def refine_database():
     
         cycle+=1
         print("Starting cycle: "+str(cycle))
-        output_folder="cycle_"+str(cycle) 
-        output_folders.append(str(Path(Output_directory,output_folder)))
+        folder_name=output_folder+str(cycle) 
+        output_folders.append(folder_name)
         old_richness=richness
     
     
     
-        MSFragger_files=MSFragger_annotation(mzML_files,
-                                            Database, #unique, non-ambiguous
+        MSFragger_files=MSFragger_annotation(input_files=input_files,
+                                            database_path=database_path, 
                                             output_folder=output_folder,
                                             params_path=params_mid,
                                             no_splits=2,
@@ -953,8 +991,7 @@ def refine_database():
         prots["Decoy"]=prots["Proteins"].str.startswith("decoy_")
         
      
-    
-    
+
         prots["OX"]=prots["Proteins"].str.replace("decoy_","").str.split("|").apply(lambda x: x[-1]) 
         prots[ranks]=taxdf.loc[prots["OX"].tolist(),ranks].values
     
@@ -983,7 +1020,7 @@ def refine_database():
         
     
         
-        tlca=weighted_lca(target,group_on="u_ix",weight_column="score",protein_column="Proteins",weight_cutoff=0.6)
+        tlca=weighted_lca(target,group_on="u_ix",weight_column="score",protein_column="Proteins",weight_cutoff=weight_cutoff)
         tlca.to_csv(str(Path(Output_directory,output_folder,"lca.tsv")),sep="\t")
         proteins,taxids=denoise_nodes(tlca)
      
@@ -1008,7 +1045,7 @@ def refine_database():
         decrease_ratio=richness/old_richness
     
         print("Database size decrease fraction : "+str(decrease_ratio))
-        if decrease_ratio>0.95: #0.95
+        if decrease_ratio>min_rate: #0.95
             break
 
     return output_folders
@@ -1229,7 +1266,7 @@ def merge_files(files,output_path=False):
 
 def load_full_db(Database): #load in memory (works only for small databases)
     recs=SeqIO.parse(Database,format="fasta")
-    rdf=pd.DataFrame([[str(r.seq),r.description,r.id] for r in recs],columns=["seq","id"])
+    rdf=pd.DataFrame([[str(r.seq),r.description,r.id] for r in recs],columns=["seq","description","id"])
     
     rdf["OX"]=rdf.id.str.split("|").apply(lambda x: x[-1])
     rdf=rdf.merge(taxdf,how="left",left_on="OX",right_index=True).dropna()

@@ -14,13 +14,14 @@ try:
 except:
     pass
 
-from CHEW_funs import *
+from load_vars import *
+
+
 from inspect import getsourcefile
 os.chdir(str(Path(os.path.abspath(getsourcefile(lambda:0))).parents[0])) # set base path
 basedir=os.getcwd()
 print(basedir)
 svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
-
 
 #%% ### Description
 
@@ -49,8 +50,8 @@ unclustered_database_fasta="" #fasta file (or folder with fasta files in case of
 unclustered_database_dmnd=""  #diamond database
 
 #variable handling and logging
-variable_tab=""   # Optional: supply parameters from a file
-write_vars=False  # Optional: log parameter dict (kws) used within script to file
+variable_tab="C:/MP-CHEW/CHEW/test_params.xlsx"   # Optional: supply parameters from a file, uses columns: Key, Value
+#write_vars=True   # Optional: log parameter dict (kws) used within script to file
 
 #output folders
 Temporary_directory=""
@@ -65,7 +66,7 @@ MSFragger=False
 SMSNet=False
 
 ### annotate_MSFragger
-params_path=str(Path(basedir,"params_fast.params")) # path to params file with detailed MSFragger parameters
+params_path=str(Path(basedir,"closed_fragger_fast.params")) # path to params file with detailed MSFragger parameters
 max_no_hits=5                                       # max number of hits retained from each database split
 no_splits=None                                      # number of database splits, determines performance and temporary index size
 no_batches=None                                     # number of file splits,     determines performance and temporary index size
@@ -105,6 +106,7 @@ minimum_taxid_frequency=20
 #### Section 5: final annotation
 
 
+
 #%% Update parameter dict (kws)
            
 ### Define keyword dictionary 
@@ -121,36 +123,57 @@ args = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
 kws.update(args)
 
 ### update kws from variable_tab 
-if variable_tab: kws.update(load_variables(variable_tab))
+if variable_tab: kws.update(load_variables(variable_tab)) #uses columns: Key, Value
 if "variable_tab" in kws.keys():
     if kws.get("variable_tab"): 
         kws.update(load_variables(kws.get("variable_tab")))
 
 #log keyword dictionary
-if write_vars:
-    filename=datetime.now.strftime("%y_%m_%d_%H_%M_%S")+"raw2fasta.txt" #the basename needs to be changed manually per script
-    pd.DataFrame.from_dict(kws).to_csv(filename,sep="\t")
+kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"raw2fasta.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
+kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
+kws_df.columns=["Key","Value"]
+kws_df.set_index("Key").to_csv(kws_filename,sep="\t")
 
 
+from CHEW_funs import *
+
+locals().update(kws)
+
+
+#%%
+
+
+
+    
 #%% Raw2peplist
 
 annotations=[]
 
+mzML_files=raw2mzML() 
+
+
 #annotate de novo
-if SMSNet: annotations+=annotate_SMSnet()
+if SMSNet: 
+    mgf_files=raw2mgf()
+    annotations+=SMSnet_annotation(input_files=mgf_files)
     
 #annotate with clustered database
-if MSFragger: annotations+=annotate_MSFragger(database_path=clustered_dabase_fasta)
+if MSFragger: 
+    annotations+=MSFragger_annotation(input_files=mzML_files,
+                                       database_path=clustered_database_fasta)
 
 Diamond_fasta=write_to_Diamond_fasta(input_files=annotations)
+
+
 
 #%% peplist2db
 
 #parse peplist (if file is not fasta)
-Diamond_fasta=parse_peplist(Diamond_fasta) 
+Diamond_fasta=parse_peplist(input_file=Diamond_fasta) 
 
 #align peptide list with DIAMOND
-Alignment=Diamond_alignment(input_file=Diamond_fasta)
+Alignment=Diamond_alignment(input_file=Diamond_fasta,
+                            database_path=unclustered_database_dmnd)
 
 #write matched sequences to database
 target=Write_alignment_to_database(input_file=Alignment)
@@ -163,6 +186,9 @@ if minimum_taxid_frequency:
 
 
 #%% Refine_db
+
+#input is mzml files
+#
 
 #load in mem
 
@@ -183,4 +209,4 @@ if minimum_taxid_frequency:
 #%% Cleanup
 
 
-
+    
