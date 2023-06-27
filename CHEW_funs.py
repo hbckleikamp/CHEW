@@ -41,19 +41,28 @@ basedir=os.getcwd()
 
 
 #SMSnet filepaths
-simple_masks=str(Path(basedir,"simple_unmasks.tsv"))
+simple_masks=pd.read_csv(str(Path(basedir,"simple_unmasks.tsv")),sep="\t")
 
 #MSFragger filepaths
 MSFragger_jar_path=str(Path(basedir,"MSFragger-3.5.jar"))  
 pep_split_path=str(Path(basedir,"msfragger_pep_split_HK.py"))
+params_fast =str(Path(basedir,"closed_fragger_fast.params"))  #faster initial search
+params_mid  =str(Path(basedir,"closed_fragger_mid.params"))   #medium search during refinement
+params_final=str(Path(basedir,"closed_fragger_final.params")) #detailed search for smaller db
 
 
 
+#Base taxonomy filepaths
 ranks=np.array(["superkingdom","phylum","class","order","family","genus","species"]) 
+taxdf_path=str(Path(basedir,"parsed_ncbi_taxonomy.tsv"))
+
 
 IO_batch=10**6 #how much lines should be written or read at once from a fasta file 
 diamond_output_columns=["qseqid","sseqid","stitle","bitscore","full_sseq"]
-taxdf=""
+
+
+
+
 
 #kws="python scope is stupid"
 
@@ -114,10 +123,10 @@ def passed_kwargs():
             #parse output_folders
             output_folder,tmp_folder,Output_directory,Temporary_directory,basedir=class_instance.output_folder,class_instance.tmp_folder,class_instance.Output_directory,class_instance.Temporary_directory,class_instance.basedir
             
-
-            
             if not os.path.isabs(output_folder): output_folder=str(Path(basedir,Output_directory,output_folder))
             if not os.path.isabs(tmp_folder):       tmp_folder=str(Path(basedir,Temporary_directory,tmp_folder))
+            
+            
             class_instance.output_folder=output_folder
             class_instance.tmp_folder=tmp_folder 
                 
@@ -193,14 +202,19 @@ def raw2mzML(*,output_folder="mzML",**kwargs):
     for input_file in input_files:
         
         output_file=str(Path(output_folder,Path(input_file).stem+".mzML"))
-        output_files.append(output_file)
         
-        if not output_file.endswith(".mzML"):
+        
+        if not input_file.endswith(".mzML"):
+            output_files.append(output_file)
+            
             command="cd" +' "'+output_folder+'" && msconvert '
             command+='"'+input_file+'"' 
             command+=' --mzML --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
             print(command)
             stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+            
+        else:    
+            output_files.append(input_file)
             
     return output_files
 
@@ -221,7 +235,9 @@ def raw2mgf(*,output_folder="mgf",**kwargs):
     for input_file in input_files:
         output_file=str(Path(output_folder,Path(input_file).stem+".mgf"))
         output_files.append(output_file)
-        if not output_file.endswith(".mgf"):
+        
+        if not input_file.endswith(".mgf"):
+            output_files.append(output_file)
         
             command="cd" +' "'+output_folder+'" && msconvert '
             command+='"'+input_file+'"' 
@@ -230,7 +246,10 @@ def raw2mgf(*,output_folder="mgf",**kwargs):
             stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
             
         
-        reformat_mfg(output_file)
+        else:    
+            output_files.append(input_file)
+        
+        reformat_mfg(output_files[-1])
         
     return output_files
 
@@ -240,7 +259,7 @@ def raw2mgf(*,output_folder="mgf",**kwargs):
 
 @passed_kwargs()
 def MSFragger_annotation(*, 
-                         params_path=str(Path(basedir,"closed_fragger_fast.params")),
+                         params_path=params_fast,
                          max_no_hits=5, #total number of top hits retained after mergeing database splits
                          no_splits=None, 
                          no_batches=None,
@@ -416,6 +435,86 @@ def SMSnet_annotation(**kwargs):
 
 #Write MSfragger and PepNet files to fasta files fo Diamond alignment
 
+
+
+
+def parse_SMSnet_output(input_file,simple_unmask,SMSnet_ppm,SMSnet_minscore):
+    
+    pepdf=""
+    if type(input_file)==str:
+        pepdf=pd.read_csv(input_file,sep="\t")
+    if isinstance(input_file, pd.DataFrame):
+        pepdf=input_file
+        
+    
+    if SMSnet_ppm: pepdf=pepdf[pepdf['MassError(ppm)'].abs()<=SMSnet_ppm]
+    if SMSnet_minscore: pepdf=pepdf[pepdf.Scores.str.rsplit(";",expand=True).astype(float).mean(axis=1)>=SMSnet_minscore]
+    if simple_unmask: #unmask simple combinations(1 or 2)
+        preds=pepdf["Prediction"].str.replace("I","L").str.replace("J","L").drop_duplicates() #equate I and J to L
+        
+        masks=preds.str.replace(")","(",regex=False).str.split("(",regex=False).explode() 
+        masses=list(set(masks[masks.str.contains(".",regex=False)].astype(float).tolist()))
+        masses.sort()
+        
+        for m in masses:
+            match=simple_masks[(simple_masks["upper"]>m) & (simple_masks["lower"]<m)]
+            combs=sum([["".join(p) for p in itertools.permutations(c)] for c in match["compositions"]],[])
+            if len(combs): preds=preds.str.replace("("+str(m)+")",'"],'+str(combs)+',["',regex=False)
+                
+        preds='[["'+preds.str.lstrip('"],').str.rstrip('"[,')+'"]]'
+        preds=preds.str.replace('[["[','[[',regex=False).str.replace(']"]]',']]',regex=False).apply(eval)
+        preds=preds.apply(lambda x:list(itertools.product(*x))).explode().apply(lambda x: "".join(x)).rename("Prediction")
+       
+        pepdf.pop("Prediction")
+        pepdf=pepdf.merge(preds,left_index=True,right_index=True,how="right").reset_index()
+
+    #select longest tag for alignment
+    pepdf["tag"]=pd.Series([max(pep[::2],key=len) for pep in pepdf["Prediction"].str.upper().str.replace("(",")",regex=False).str.split(")",regex=False)],name="longest_tag") 
+
+    return pepdf
+
+@passed_kwargs()
+def add_proteins_SMSnet(*,
+                    
+                    #SMSnet score filters
+                    simple_unmask=True,     #attempts to solve low complexity masked SMSnet regions
+                    SMSnet_ppm=False,       #max ppm tolerance
+                    SMSnet_minscore=False,  #minum mean peptide score
+                    
+                    **kwargs):
+ 
+    
+    v=add_proteins_SMSnet.vars #parse function arguments
+    
+    #default arguments
+    output_folder,tmp_folder=v.output_folder,v.tmp_folder
+    simple_unmask=v.simple_unmask
+    SMSnet_ppm=v.SMSnet_ppm
+    SMSnet_minscore=v.SMSnet_minscore
+    
+    #required arguments
+    input_files=v.input_files 
+    Alignment=v.Alignment
+    check_required_args(v,["input_files","Alignment"])
+    
+    al=pd.concat([i for i in Diamond_alignment_Reader(Alignment)])
+    al["Proteins"]=al["sseqid"]
+    al=al[["tag","Proteins"]].groupby("tag")["Proteins"].apply(lambda x: " ".join(x))
+
+    output_paths=[]
+    if type(input_files)!=type(list()):
+        input_files=[input_files]
+    input_files.sort()
+    
+    for input_file in input_files:
+        
+        output_path=str(Path(output_folder,Path(input_file).name.replace("_SMSNET.tsv","_processed_SMSNET.tsv")))
+        output_paths.append(output_path)
+        pepdf=parse_SMSnet_output(input_file,simple_unmask,SMSnet_ppm,SMSnet_minscore)
+        pepdf.merge(al,on="tag",how="left").to_csv(output_path,sep="\t")
+        
+    return output_paths
+
 @passed_kwargs()
 def write_to_Diamond_fasta(*,
                            
@@ -432,7 +531,7 @@ def write_to_Diamond_fasta(*,
                            header_info=[],         #information columns that should be retained in the fasta header
                            unique_peptides=True,   #only write unique combinations of header and peptide
                            min_length=4,           #minimum tag length
-                           output_file="peplist",  #output_file name
+                           output_file="peplist.fa",  #output_file name
                            **kwargs
                            ):
        
@@ -486,31 +585,9 @@ def write_to_Diamond_fasta(*,
         
         
         if input_file.endswith("SMSNET.tsv"): #parse SMSNet outputs
-            
-            if SMSnet_ppm: pepdf=pepdf[pepdf['MassError(ppm)'].abs()<=SMSnet_ppm]
-            if SMSnet_minscore: pepdf=pepdf[pepdf.Scores.str.rsplit(";",expand=True).astype(float).mean(axis=1)>=SMSnet_minscore]
-            if simple_unmask: #unmask simple combinations(1 or 2)
-                preds=pepdf["Prediction"].str.replace("I","L").str.replace("J","L").drop_duplicates() #equate I and J to L
-                
-                masks=preds.str.replace(")","(",regex=False).str.split("(",regex=False).explode() 
-                masses=list(set(masks[masks.str.contains(".",regex=False)].astype(float).tolist()))
-                masses.sort()
-                
-                for m in masses:
-                    match=simple_masks[(simple_masks["upper"]>m) & (simple_masks["lower"]<m)]
-                    combs=sum([["".join(p) for p in itertools.permutations(c)] for c in match["compositions"]],[])
-                    if len(combs): preds=preds.str.replace("("+str(m)+")",'"],'+str(combs)+',["',regex=False)
-                        
-                preds='[["'+preds.str.lstrip('"],').str.rstrip('"[,')+'"]]'
-                preds=preds.str.replace('[["[','[[',regex=False).str.replace(']"]]',']]',regex=False).apply(eval)
-                preds=preds.apply(lambda x:list(itertools.product(*x))).explode().apply(lambda x: "".join(x)).rename("Prediction")
-               
-                pepdf.pop("Prediction")
-                pepdf=pepdf.merge(preds,left_index=True,right_index=True,how="right").reset_index()
+            pepdf=parse_SMSnet_output(input_file=input_file,
+                                      SMSnet_ppm=SMSnet_ppm,SMSnet_minscore=SMSnet_minscore,simple_unmask=simple_unmask)
 
-            #select longest tag for alignment
-            pepdf["tag"]=pd.Series([max(pep[::2],key=len) for pep in pepdf["Prediction"].str.upper().str.replace("(",")",regex=False).str.split(")",regex=False)],name="longest_tag") 
-    
         pepdf=pepdf[pepdf["tag"].fillna("").apply(len)>=min_length]
         
         #parse fasta header
@@ -602,6 +679,7 @@ def Diamond_alignment(*,
                       minimum_coverage=80,
                       minimum_bitscore=20,
                       other_args=" --algo ctg --dbsize 1 ",
+                      diamond_output_columns=diamond_output_columns,
                       **kwargs
                       ):
     
@@ -676,19 +754,20 @@ def Write_alignment_to_database(*,output_file="target.fa",unique_accs=True,**kwa
     output_file=v.output_file
     unique_accs=v.unique_accs
     
-    iterable=Diamond_alignment_Reader(input_file,output_columns=diamond_output_columns)
+    iterable=Diamond_alignment_Reader(input_file)
 
     output_path=str(Path(output_folder,output_file))
-
+    print(output_file)
+    print(output_path)
     seen=set()  
-
-    with open(output_file,"w") as f:
+   
+    with open(output_path,"w") as f:
     
         for ix,batch in enumerate(iterable):
             
             if unique_accs:
                 batch=batch[~batch.sseqid.isin(seen)]
-                seen.add(batch.sseqid.tolist())
+                seen.update(batch.sseqid.tolist())
             
             batch.full_sseq=batch.full_sseq.str.replace("*","",regex=False) #remove protein ends
             f.write("\n".join((">"+batch.stitle+"\n"+batch.full_sseq))+"\n")
@@ -763,12 +842,13 @@ def write_database_composition(*,output_file="database_composition.tsv", **kwarg
     #required args
     input_file=v.input_file
     check_required_args(v,["input_file"])
+    taxdf=v.taxdf
     
     #default args
     output_folder,tmp_folder=v.output_folder,v.tmp_folder
 
     recs=SeqIO.parse(input_file,format="fasta")
-    chunks=chunk_gen(recs,IO_batch)
+    chunks=chunk_gen(recs)
     
     output_path=str(Path(output_folder,output_file))
 
@@ -839,17 +919,51 @@ def filter_Database_taxonomy(*,output_file="ft_target.fa",**kwargs):
 
     return output_path
     
-
-
 @passed_kwargs()
-def filter_database_proteins(*,output_file="fp_target.fa",
-                            **kwargs):
+def filter_Database_proteins(*,output_file="fp_target.fa",**kwargs): #filters based on header
 
     v=filter_Database_taxonomy.vars #parse function arguments
     
     #required args
+    input_file=v.input_file
+    proteins=v.proteins 
+    check_required_args(v,["input_file","proteins"]) 
+    
+    #default args
+    output_folder,tmp_folder=v.output_folder,v.tmp_folder
+    
+    output_path=str(Path(output_folder,output_file))
+    
+
+    #standard for single database
+    recs=SeqIO.parse(input_file,format="fasta")
+    chunks=chunk_gen(recs)
+    
+    with open(output_path,"w") as f: #clears file if exists
+        pass
+    with open(output_path,"a") as f:
+        
+        for ic,c in enumerate(chunks):
+            print("chunk "+ str(ic))
+    
+            chunk_df=pd.DataFrame([[str(r.seq),r.description,r.id] for r in c],columns=["seq","description","id"])
+            chunk_df=chunk_df[chunk_df["id"].isin(proteins)]
+
+            f.write("\n".join(">"+chunk_df["description"]+"\n"+chunk_df["seq"])+"\n")
+
+    return output_path
+    
+
+
+@passed_kwargs()
+def filter_Database_proteins_in_mem(*,output_file="fp_target.fa", #uses simple dataframe indexing (also writes db composition)
+                            **kwargs):
+
+    v=filter_Database_proteins_in_mem.vars #parse function arguments
+    
+    #required args
     input_file=v.input_file #this is a dataframe thats loaded in memory so technically not a file
-    proteins=v.taxids
+    proteins=v.proteins
     check_required_args(v,["input_file","proteins"]) #taxids can be empty
     
     #default args
@@ -857,7 +971,7 @@ def filter_database_proteins(*,output_file="fp_target.fa",
     
     output_path=str(Path(output_folder,output_file))
     
-    input_file=input_file.loc[proteins,:]    
+    input_file=input_file.loc[proteins,:]     
     
     
     cols=['OX', 'superkingdom', 'phylum', 'class', 'order','family', 'genus', 'species', 'Dump_taxid', 'OS']
@@ -873,102 +987,139 @@ def filter_database_proteins(*,output_file="fp_target.fa",
     
     return input_file,output_path,len(comp),len(input_file) #mem_db, written_db, richess, entries
              
-#%%
 
 
-def refine_database(input_files):
+@passed_kwargs()
+def load_full_db(Database,**kwargs): #load in memory (works only for small databases)
+
+    v=load_full_db.vars #parse function arguments
+    taxdf=v.taxdf
+
+    recs=SeqIO.parse(Database,format="fasta")
+    rdf=pd.DataFrame([[str(r.seq),r.description,r.id] for r in recs],columns=["seq","description","id"])
+    
+    rdf["OX"]=rdf.id.str.split("|").apply(lambda x: x[-1])
+    rdf=rdf.merge(taxdf,how="left",left_on="OX",right_index=True).dropna()
+    
+    return rdf.set_index("id")
+
+
+@passed_kwargs()
+def make_diamond_database(*, #.fa
+          
+                          output_file=False,
+                          **kwargs):
+    
+    
+    v=make_diamond_database.vars #parse function arguments
+    
+    #required args
+    input_file=v.input_file #this is a dataframe thats loaded in memory so technically not a file
+    check_required_args(v,["input_file"]) 
+    output_folder,tmp_folder=v.output_folder,v.tmp_folder
+    
+    
+    if output_file: output_path=str(Path(output_folder,Path(output_file).stem))
+    else:           output_path=str(Path(output_folder,Path(input_file).stem))
+
+
+    command="cd "+'"'+basedir +'"'+ " && "
+    command+="diamond makedb --in "+'"'+input_file+'"' + " -d "+'"'+output_path+'"'
+    print(command)
+    stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+
+
+    return output_path+".dmnd"
+
+@passed_kwargs()
+def refine_database(*,
+                    
+                    #MSFragger params
+                    params_path=params_mid,
+                    no_splits=2,
+                    no_batches=1,    
+
+                    #MSFragger score filters
+                    max_evalue=10,
+                    Top_score_fraction=0.9, #in case of multiple top candidates retain the top scoring fraction
+                    
+                    #Pre LCA filter
+                    Frequency_prefilter=0, # 2   Static prefiler cutoff
+                    Precision_prefilter=0, # 0.7 Target Decoy precision based denoising pre LCA filter
+
+                    #focusing LCA parameters
+                    weight_rank="species",
+                    weight_cutoff=0.6,   
+                    
+                    #Post LCA representative picking
+                    min_count=2,
+                    min_ratio=0.99, 
+                    prefilter_remove=False,
+                    denoise_remove=True,
+                    denoise_ranks=ranks.tolist(),
+                    
+                    #general parameters
+                    min_rate=0.95,
+                    output_folder="refine",
+                    
+                    **kwargs):
 
     #required files mzML files, database
 
     v=refine_database.vars #parse function arguments
     
-    input_files=v.input_files
+    input_files=v.input_files     #mzML files
     database_path=v.database_path
     check_required_args(v,["input_files","database_path"]) #taxids can be empty
 
-    #MSFragger params
-    params_path=params_mid,
-    no_splits=2,
-    no_batches=1    
+    #parse non-default arguments
+    params_path=v.params_path
+    no_splits=v.no_splits
+    no_batches=v.no_batches
+    max_evalue=v.max_evalue
+    Top_score_fraction=v.Top_score_fraction
+    Frequency_prefilter=v.Frequency_prefilter
+    Precision_prefilter=v.Precision_prefilter
+    weight_rank=v.weight_rank
+    min_count=v.min_count
+    min_ratio=v.min_ratio
+    prefilter_remove=v.prefilter_remove
+    denoise_remove=v.denoise_remove
+    denoise_ranks=v.denoise_ranks
+    min_rate=v.min_rate
+    output_folder,tmp_folder=v.output_folder,v.tmp_folder
+    
+    taxdf=v.taxdf
 
 
-    #MSFragger score filters
-    max_evalue=10,
-    Top_score_fraction=0.9, #in case of multiple top candidates retain the top scoring fraction
-    
-    #Pre LCA filter
-    Frequency_prefilter=0 # 2   Static prefiler cutoff
-    Precision_prefilter=0 # 0.7 Target Decoy precision based denoising pre LCA filter
-
-    #focusing LCA parameters
-    weight_rank="species"
-    weight_cutoff=0.6   
-    
-    #Post LCA representative picking
-    min_count=2,
-    min_ratio=0.99, 
-    remove=False,
-    denoise_ranks=ranks.tolist()
-    
-    
-    #general parameters
-    
-    min_rate=0.95
-    output_folder="refine"
-
-    
-    #make raw to mzml if supplied files are raw
-
+    input_files=raw2mzML(input_files=input_files)     #make raw to mzml if supplied files are raw
 
     DB_in_mem=load_full_db(database_path)
-    composition,richness,entries=write_database_composition(database_path)
+    composition,richness,entries=write_database_composition(input_file=database_path)
     
     #variable name backup since cycle overwrites utarget,entries
     Initial_Database,Initial_entries=database_path,entries
     
-    decoy=write_decoy(Initial_Database,output_folder=output_folder)
-    Database=merge_files([Initial_Database,decoy])
-    
-    
-    
-    
-    # ############ Refinement cycles ############# 
-    output_folders=[]
-    
-    
-    
-    cycle=0
-    
-    
-    
+    decoy=write_decoy(input_file=Initial_Database,output_folder=output_folder)
+    database_path=merge_files([Initial_Database,decoy])
+
+    cycle=0    
     while True:
     
         cycle+=1
         print("Starting cycle: "+str(cycle))
-        folder_name=output_folder+str(cycle) 
-        output_folders.append(folder_name)
+        folder_name=output_folder+"_"+str(cycle) 
         old_richness=richness
     
     
     
         MSFragger_files=MSFragger_annotation(input_files=input_files,
                                             database_path=database_path, 
-                                            output_folder=output_folder,
-                                            params_path=params_mid,
-                                            no_splits=2,
-                                            no_batches=1)
+                                            output_folder=folder_name,
+                                            params_path=params_path, 
+                                            no_splits=no_splits,
+                                            no_batches=no_batches)
         
-    
-        #### this section can also be made into a function ####
-    
-        #this is an alignment-free implementation
-    
-    
-        
-        
-        
-    
-    
         prots=[]
         for ix,f in enumerate(MSFragger_files):
         
@@ -989,66 +1140,52 @@ def refine_database(input_files):
         prots["Proteins"]=prots["Proteins"].str.strip().str.split(" ")
         prots=prots.explode("Proteins")
         prots["Decoy"]=prots["Proteins"].str.startswith("decoy_")
-        
-     
-
         prots["OX"]=prots["Proteins"].str.replace("decoy_","").str.split("|").apply(lambda x: x[-1]) 
         prots[ranks]=taxdf.loc[prots["OX"].tolist(),ranks].values
     
+
+    
+        #filter proteins based on frequency and precision of their taxonomy
         g=prots.groupby([weight_rank,"Decoy"]).size()
         p=g.rename("Count").reset_index().pivot(index="species",columns="Decoy",values="Count").fillna(0)
         p.columns=["decoy" if i else "target" for i in p.columns]
-        
-        
         p["precision"]=p["target"]/(p["target"]+p["decoy"])
-        
-    
-        
-        
-        p.to_csv(str(Path(Output_directory,output_folder,"precision.tsv")),sep="\t")
-        p=p[p["target"]>=Frequency_prefilter]
-        p=p[p["precision"]>=Precision_prefilter]
-        
-    
-        
-        
-        
+        p.to_csv(str(Path(folder_name,"precision.tsv")),sep="\t")
+        rt=p[(p.target>=Frequency_prefilter) & (p.precision>=Precision_prefilter)].index #kept taxa
+        rm=prots[prots[weight_rank].isin(rt)]
+        if prefilter_remove: prots=rm
+        else: prots=pd.concat([rm, prots[prots.u_ix.isin(list(set(prots.u_ix)-set(rm.u_ix)))]])
+
         target=prots[~prots["Decoy"]]
         decoy=prots[prots["Decoy"]]
         target=target.merge(p,how="inner",left_on=weight_rank,right_index=True)
         target["score"]=target['hyperscore']*target["precision"]
-        
-    
-        
         tlca=weighted_lca(target,group_on="u_ix",weight_column="score",protein_column="Proteins",weight_cutoff=weight_cutoff)
-        tlca.to_csv(str(Path(Output_directory,output_folder,"lca.tsv")),sep="\t")
-        proteins,taxids=denoise_nodes(tlca)
-     
-    
-     
-    
-        DB_in_mem, target_db, richness, entries=filter_database_proteins(DB_in_mem,proteins,output_folder=output_folder)
-        decoy_db=write_decoy(Initial_Database,output_folder=output_folder,
-                          Sample=entries*cycle+1,
-                          Initial_entries=Initial_entries)
+        tlca.to_csv(str(Path(folder_name,"lca.tsv")),sep="\t")
         
-        Database=merge_files([target_db,decoy_db])
-    
-    
-    
-    
-    
-    
-    
-        #breaking out is now based on fraction decoy and target PSMs
         
+        proteins,taxids=denoise_nodes(tlca,min_count=min_count,min_ratio=min_ratio,remove=denoise_remove,denoise_ranks=denoise_ranks)
+        print("remaining proteins: "+str(len(proteins)))
+        
+
+        DB_in_mem, target_db, richness, entries=filter_Database_proteins_in_mem(input_file=DB_in_mem,proteins=proteins,output_folder=folder_name)
+        
+        decoy_db=write_decoy(input_file=Initial_Database,
+                             output_folder=folder_name,
+                             Sample=entries*cycle+1,
+                             Initial_entries=Initial_entries)
+        
+        database_path=merge_files([target_db,decoy_db])
+
+    
         decrease_ratio=richness/old_richness
-    
-        print("Database size decrease fraction : "+str(decrease_ratio))
-        if decrease_ratio>min_rate: #0.95
+        print("remaining taxa: "+str(richness))
+        print("Database richness decrease fraction : "+str(decrease_ratio))
+        if decrease_ratio>min_rate: 
             break
 
-    return output_folders
+    
+    return tlca,database_path,DB_in_mem
 
 #%% Helper funs
 
@@ -1072,6 +1209,7 @@ def read_pin(pinfile):
 
 #read alignment file to generator and filter on top x% scoring
 def Diamond_alignment_Reader(input_file,*,
+                             diamond_output_columns=diamond_output_columns,
                               score_cutoff=0.9): 
     
     cdf=pd.read_csv(input_file, sep='\t', chunksize=IO_batch,names=diamond_output_columns) #read to generator
@@ -1084,7 +1222,7 @@ def Diamond_alignment_Reader(input_file,*,
         if ix>0:
             d=pd.concat([sc,d])
 
-        d.loc[:,"Sequence"]=d.qseqid.str.rsplit(";",expand=True).iloc[:,0]
+        d.loc[:,"tag"]=d.qseqid.str.rsplit(";",expand=True).iloc[:,0]
         d=d[(d["bitscore"]/d.groupby("qseqid")["bitscore"].max()>=score_cutoff).tolist()]
         yield d
 
@@ -1092,13 +1230,11 @@ def Diamond_alignment_Reader(input_file,*,
         
     #last one
     d=sc
-    d.loc[:,"Sequence"]=d.qseqid.str.rsplit(";",expand=True).iloc[:,0]
+    d.loc[:,"tag"]=d.qseqid.str.rsplit(";",expand=True).iloc[:,0]
     d=d[(d["bitscore"]/d.groupby("qseqid")["bitscore"].max()>=score_cutoff).tolist()]
     
     yield d
     
-
-
 
 def fill_g(x):
     cons=[np.array(list(g)) for g in mit.consecutive_groups(np.argwhere(x==""))]
@@ -1111,12 +1247,8 @@ def fill_g(x):
     return list(x)
 
 
-            
-
-
-
 def weighted_lca(df,*, #dataframe with at least a column called Peptide, and rank
-        group_on="Sequence",
+        group_on="tag",
         weight_column="bitscore",  
         protein_column="sseqid", #name of column containing proteins
         weight_cutoff=0.8   # minimum fraction of total weights 
@@ -1163,33 +1295,27 @@ def denoise_nodes(df, #lca df
                   remove=False,
                   denoise_ranks=["phylum","class","order","family","genus","species"]):
 
-    if type(min_ratio)!=list:
-        min_ratio=[min_ratio]*len(denoise_ranks)
-            
+    if type(min_ratio)!=list: min_ratio=[min_ratio]
+    if len(min_ratio)<len(denoise_ranks):
+        min_ratio+=[max(min_ratio)]*(len(denoise_ranks)-len(min_ratio)) #pad max
     
-    
+    df=df.copy()
     df["proteins"]=df["proteins"].str.split(", ")
     edf=df.explode("proteins").reset_index()
     edf["OX"]=edf["proteins"].str.split("_").apply(lambda x: "_".join(x[-3:]))
-    
     dfs=[df]
     
     for ir,r in enumerate(denoise_ranks[::-1]): #reverse order from specific to unspecific
-        print("denoising: "+r)
+        # print("denoising: "+r)
         taxids=[]
         
         for n,tu in edf.groupby(r):
-            
-    
             if len(tu)<min_count or n=="":
                 continue
             
-    
             if tu["OX"].nunique()==1:
                 taxids.extend([tu["OX"].iloc[0]]) 
-               
             else:
-    
                 g=pd.DataFrame(tu.groupby("OX")["u_ix"].apply(set))
                 g["l"]=g["u_ix"].apply(len)
                 g=g.sort_values(by="l",ascending=False)
@@ -1197,9 +1323,7 @@ def denoise_nodes(df, #lca df
                 u=set()
                 ls=[0]
                 s=0
-    
-                #denoise
-                for ix,i in enumerate(g["u_ix"]):
+                for ix,i in enumerate(g["u_ix"]): 
                     u.update(i)
                     l=len(u)
                     ls.append(l)
@@ -1213,11 +1337,8 @@ def denoise_nodes(df, #lca df
     
                 taxids.extend(g.index[:ix].tolist()) 
         edf=edf[edf["OX"].isin(taxids)]
-    
         dfs.append(edf.groupby("u_ix")["proteins"].apply(list).rename("proteins"+str(ir)))
-        print(edf["u_ix"].nunique())
-  
-
+        #print(edf["u_ix"].nunique())
     
     if remove:
         proteins=edf["proteins"]
@@ -1227,9 +1348,9 @@ def denoise_nodes(df, #lca df
         protcols=[i for i in cdf.columns if i.startswith("proteins")]
         df["proteins"]=cdf[protcols].ffill(axis=1)[protcols[-1]] #if keep
         proteins=df.explode("proteins")["proteins"]
-        taxids=proteins.apply(lambda x: "_".join(x[-3:]))
     
     
+    taxids=proteins.str.split("|").apply(lambda x: x[-1])
 
     return list(set(proteins)), list(set(taxids))
 
@@ -1264,13 +1385,8 @@ def merge_files(files,output_path=False):
             
     return output_path
 
-def load_full_db(Database): #load in memory (works only for small databases)
-    recs=SeqIO.parse(Database,format="fasta")
-    rdf=pd.DataFrame([[str(r.seq),r.description,r.id] for r in recs],columns=["seq","description","id"])
-    
-    rdf["OX"]=rdf.id.str.split("|").apply(lambda x: x[-1])
-    rdf=rdf.merge(taxdf,how="left",left_on="OX",right_index=True).dropna()
-    
-    return rdf.set_index("id")
+#%%
+
+
 
 
