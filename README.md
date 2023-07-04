@@ -38,6 +38,7 @@ CHEW consists of 3 main routines, which are subdivided into several subroutines.
 
 
 ![alt text](https://github.com/hbckleikamp/CHEW/blob/main/CHEW_workflow.PNG)
+
 Fig. 1 CHEW workflow subroutines
 
 
@@ -46,6 +47,58 @@ Fig. 1 CHEW workflow subroutines
 
 ### Running Setup
 
+CHEW relies on external softwares for spectrum annotation (MSFragger, SMSNet) and alignment (DIAMOND).
+The folder Setup contains individual scripts to setup up CHEW on your own system.
+The script `run_Setup.py` executes each setup script in their default mode.
+
+Since MSFragger relies on an individual download liscence it should be manually downloaded:
+download MSFragger 3.5 .jar file from http://msfragger-upgrader.nesvilab.org/upgrader/, move to CHEW directory and extract contents
+CHEW is not compatible with mac/osx systems, as they require DIAMOND to be run externally.
+
+To allow easy lowest common ancestor annotation and compatibility with GTDB and NCBI taxonomies,
+the script `2_Create_taxdf.py` creates a rank normalized file containing all lineages fro GTDB and NCBI, and also flags NCBI taxids
+based for Dump-taxa (unclassified or uncultured sequences)
+
+Additionally, it needs a clustered database, an unclustered database, and a unclusterd diamond database.
+The function properly, headers of the unclustered database need to be prepped to a CHEW compatible format,
+which means the id of each fasta header should contain the "taxonomy id", as such >Accession|...|"taxonomy id".
+
+Downloading, prepping of databases and diamond database construction is done with `4_Download_unclustered_database.py`
+This script can download a variety of different databases UniProtKB (default) Swiss-Prot, TrEMBL, Uniref100,90,50 RefSeq, NCBI_NR and GTDB
+The database prepping function is also included as standalone in `db_prepper.py` 
+Additionally, there are several arguments supplied when prepping the CHEW database, which as default includes:
+removal of Eukaryotic sequences, removal of Dump taxa, euqating I and J to L, removal of Ambiguous amino acids.
+Eeach of these parameters can be changed manually, or be changed when running the setup scripts from the command line.
 
 
 ### Example CLI commands
+
+`tax_count_targets="Spectral_counts"`, `tax_count_methods=""`, `fun_count_targets="Spectral_counts"`, `fun_count_methods=""`
+
+<br>
+
+
+
+
+#### Licensing
+
+The pipeline is licensed with standard MIT-license. <br>
+If you would like to use this pipeline in your research, please cite the following papers: 
+      
+- Kong, Andy T., et al. "MSFragger: ultrafast and comprehensive peptide identification in mass spectrometry–based proteomics." Nature methods 14.5 (2017): 513-520.        
+
+- Karunratanakul, Korrawe, et al. "Uncovering thousands of new peptides with sequence-mask-search hybrid de novo peptide sequencing framework." Molecular & Cellular Proteomics 18.12 (2019): 2478-2491.
+
+- Buchfink, Benjamin, Chao Xie, and Daniel H. Huson. "Fast and sensitive protein alignment using DIAMOND." Nature methods 12.1 (2015): 59-60.
+
+
+
+#### Contact:
+-Hugo Kleikamp (Developer) @HugoKleikamp (Twitter)
+
+
+
+#### Recommended links to other repositories:
+[https://github.com/unipept](https://github.com/bbuchfink/diamond)<br>
+[https://github.com/marbl/Krona](https://github.com/Nesvilab/MSFragger)<br>
+[https://github.com/nh2tran/DeepNovo](https://github.com/cmb-chula/SMSNet)https://github.com/cmb-chula/SMSNet
