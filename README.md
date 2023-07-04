@@ -48,13 +48,16 @@ Fig. 1 CHEW workflow subroutines
 
 ### CHEW Setup
 
-CHEW relies on external softwares for spectrum annotation (MSFragger, SMSNet) and alignment (DIAMOND).
+CHEW relies on external softwares for  raw file conversion (msconvert) spectrum annotation (MSFragger, SMSNet) and alignment (DIAMOND).
 The folder Setup contains individual scripts to setup up CHEW on your own system.
 The script `run_Setup.py` executes each setup script in their default mode.
 
 Since MSFragger relies on an individual download liscence it should be manually downloaded:
 download MSFragger 3.5 .jar file from http://msfragger-upgrader.nesvilab.org/upgrader/, move to CHEW directory and extract contents
 CHEW is not compatible with mac/osx systems, as they require DIAMOND to be run externally.
+
+msconvert must also be downloaded manually from https://proteowizard.sourceforge.io/download.html
+and added to the default path of the operating system
 
 To allow easy lowest common ancestor annotation and compatibility with GTDB and NCBI taxonomies,
 the script `2_Create_taxdf.py` creates a rank normalized file containing all lineages fro GTDB and NCBI, and also flags NCBI taxids
