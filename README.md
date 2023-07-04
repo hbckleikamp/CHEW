@@ -21,4 +21,4 @@ CHEW consists of 3 main routines, which are subdivided into several subroutines.
 
 
 
-![alt text](https://github.com/hbckleikamp/CHEW/edit/main/image.jpg?raw=true)
+![alt text](https://github.com/hbckleikamp/CHEW/edit/main/CHEW_workflow.png?raw=true)
