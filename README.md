@@ -73,7 +73,7 @@ Eeach of these parameters can be changed manually, or be changed when running th
 
 Disclaimer: <br>
 While CHEW is designed to work with low memory requirements and high speed, it can write large temporary files to memory when using MSFragger and DIAMOND.
-For example: MSFragger annotation of 10 files against a 20 GB could lead to ~200 GB of temporary indices. 
+For example: MSFragger annotation of 10 files against a 20 GB database could lead to ~200 GB of temporary indices. 
 It is therefore recommended to operate CHEW on a local desktop or laptop, instead of a computer cluster, which often have limited memory and can crash when full.
 CHEW can be installed on an external HDD or SSD file to ensure sufficient storage space for temporary indices.
 In each subroutine an alternative directory can be specified for writing temporary indices using the argument `-Temporary_directory "your directory"`
