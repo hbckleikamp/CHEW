@@ -65,7 +65,7 @@ Path_to_taxonomy=str(Path(basedir,"parsed_taxonomy.tsv"))
 
 prepdb=True #after downloading prep DB with following arguments
 
-Bacterial_only=True    # retain only Bacteria (and Archaea(!)) in database  
+BacArch_only=True      # retain only Bacteria (and Archaea(!)) in database  
 Equate_IL=True         # change I and J into L 
 Remove_ambiguous=True  # remove ambiguous amino acids "B","X","Z","[","(" , and J in case IL is not equated
 No_Fragments=False     # remove incomplete sequences from UniprotKB contain (Fragment)/(Fragments) in header
@@ -126,7 +126,7 @@ def prep_db(Path_to_db,Ambiguous_AAs=Ambiguous_AAs):
             if is_fasta(input_path):
                 
                 Output_path=input_path
-                if Bacterial_only:   Output_path=Output_path.replace(".fasta","_BacArch.fasta")
+                if BacArch_only:     Output_path=Output_path.replace(".fasta","_BacArch.fasta")
                 if Remove_ambiguous: Output_path=Output_path.replace(".fasta","_NoAmb.fasta")
                 if No_Dump:          Output_path=Output_path.replace(".fasta","_NoDump.fasta")
                 if No_Fragments:     Output_path=Output_path.replace(".fasta","_NoFrag.fasta")
@@ -137,10 +137,10 @@ def prep_db(Path_to_db,Ambiguous_AAs=Ambiguous_AAs):
                 output_paths.append(Output_path)
                 
                 # tax database and files
-                if Bacterial_only or No_Dump:
+                if BacArch_only or No_Dump:
                     taxdf=pd.read_csv(Path_to_taxonomy,sep="\t")
                 
-                if Bacterial_only:
+                if BacArch_only:
                     taxdf=taxdf[(taxdf["superkingdom"]=="Bacteria") | (taxdf["superkingdom"]=="Archaea")].astype(str)
                 
                 if No_Dump:
