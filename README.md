@@ -28,7 +28,8 @@ CHEW consists of 3 main routines, which are subdivided into several subroutines.
     - The routine optionally uses SMSNet for de novo annotation, and MSFragger for database searching against a clustered database   
 2. Peplist2finalDB:
     - This routine constructs a focused database from a user-supplied peplist, through an initial alignment step with DIAMOND, followed by database searching with MSFragger and filtering cycles.
-    - The user wants to use different softwares to generate their own peptides, they can supply a peplist in fasta or tabular format  
+    - The user wants to use different softwares to generate their own peptides, they can supply a peplist in fasta or tabular format
+    - The focused database can be used to annotate other files, or can be used with different database searching tools.
 3. Annotate_final
     - This routine uses a focused database to perform final annoatation with MSFragger
     - Resulting files can be filtered on false discovery rate, and will contain lowest common ancestor annotation
@@ -45,7 +46,7 @@ Fig. 1 CHEW workflow subroutines
 
 
 
-### Running Setup
+### Running CHEW
 
 CHEW relies on external softwares for spectrum annotation (MSFragger, SMSNet) and alignment (DIAMOND).
 The folder Setup contains individual scripts to setup up CHEW on your own system.
@@ -70,6 +71,12 @@ Additionally, there are several arguments supplied when prepping the CHEW databa
 removal of Eukaryotic sequences, removal of Dump taxa, euqating I and J to L, removal of Ambiguous amino acids.
 Eeach of these parameters can be changed manually, or be changed when running the setup scripts from the command line.
 
+Disclaimer: <br>
+While CHEW is designed to work with low memory requirements and high speed, it can write large temporary files to memory when using MSFragger and DIAMOND.
+For example: MSFragger annotation of 10 files against a 20 GB could lead to ~200 GB of temporary indices. 
+It is therefore recommended to operate CHEW on a local desktop or laptop, instead of a computer cluster, which often have limited memory and can crash when full.
+CHEW can be installed on an external HDD or SSD file to ensure sufficient storage space for temporary indices.
+In each subroutine an alternative directory can be specified for writing temporary indices using the argument `-Temporary_directory "your directory"`
 
 ### Example CLI commands
 Further documentation and syntax is supplied within each individual script.
@@ -85,6 +92,18 @@ Prep existing database for CHEW, retain non-prokaryotic sequences and Dump taxid
 
 Convert raw files to mzML: <br>
 `raw2mzML -input_files "folder with raw files"`
+
+Construct a peplist with only SMSNet: <br>
+`raw2peplist.py -input_files "  your input folder  "  -database_path " your database "  -SMSNet 1`
+
+Run database construction from peplist: <br>
+`peplist2Final_DB.py -mzML_files "path" -peplist "path" -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path"`
+
+Focus an existing database: <br>
+`Refine_DB.py -input_files "  mzML folder  " -database_path " your database "`
+
+Focus a database from a list of proteins or taxonomy ids: <br>
+`Construct_DB.py -input_file "  tsv file with proteins or taxonomy ids  " -database_path " your database "` 
 
 Run complete CHEW pipeline with MSFragger (db search) and SMSNet (de novo): <br>
 `CHEW.py -input_files "folder with raw files"  -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path" -MSFragger 1 -SMSNet 1`
@@ -111,6 +130,6 @@ If you would like to use this pipeline in your research, please cite the followi
 
 
 #### Recommended links to other repositories:
-[https://github.com/unipept](https://github.com/bbuchfink/diamond)<br>
-[https://github.com/marbl/Krona](https://github.com/Nesvilab/MSFragger)<br>
-[https://github.com/nh2tran/DeepNovo](https://github.com/cmb-chula/SMSNet)https://github.com/cmb-chula/SMSNet
+https://github.com/bbuchfink/diamond<br>
+https://github.com/Nesvilab/MSFragger<br>
+https://github.com/cmb-chula/SMSNet
