@@ -30,26 +30,23 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 
 
 
-
 #%% Define parameter dict (kws)
 
 #required arguments
-#This subroutine has the most required arguments out of all, therefore it is recommended to work with paramter files
+#This subroutine has the most rquired arguments out of all, therefore it is recommended to work with paramter files
 
 #should either supply a list of mzML (and or) SMSNet file
-input_files=""                # raw files
+mzML_files=""                 # list or space delimited string or folder of filepaths mzML files, used for MSFragger
+peplist=""                    # fasta file: aligned against diamond database
 clustered_database_fasta=""   # fasta file 
 unclustered_database_fasta="" # fasta file (or folder with fasta files in case of GTDB)
 unclustered_database_dmnd=""  # diamond database
 
-#Which annotation should be used? (one or more should be True)
-MSFragger=False
-SMSNet=False
 
 #Example syntax:
-#CHEW.py -input_files "path"  -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path" -MSFragger 1 -SMSNet 1
+#peplist2Final_DB.py -mzML_files "path" -peplist "path" -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path"
 
-
+SMSNet_files=""    #optional: list or space delimited string or folder of filepaths SMSNet files, used for SMSNet
 
 #output folders
 Temporary_directory=""
@@ -61,13 +58,9 @@ variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, 
 
 #### Section 1: raw2peplist
 
-
-
-### annotate_MSFragger
-params_path=str(Path(basedir,"closed_fragger_fast.params")) # path to params file with detailed MSFragger parameters
-max_no_hits=5                                       # max number of hits retained from each database split
-no_splits=None                                      # number of database splits, determines performance and temporary index size
-no_batches=None                                     # number of file splits,     determines performance and temporary index size
+#Which annotation should be used? (one or more should be True)
+MSFragger=False
+SMSNet=False
 
 #MSFragger score filters
 max_evalue=10
@@ -98,7 +91,6 @@ initial_minimum_taxid_frequency=20 #minimum taxid frequency that Diamond databas
 
 #### Section 3: refine_db
 #Refine MSFragger params
-refine_params_path=params_mid # path to params file with detailed MSFragger parameters
 refine_no_splits=2            # number of database splits, determines performance and temporary index size
 refine_no_batches=1           # number of file splits,     determines performance and temporary index size
 
@@ -123,12 +115,7 @@ min_rate=0.95 #break out of refinement when database richness decreases less tha
 final_denoise_ranks=["class","order","family","genus","species"]
 final_min_ratio=0.99
 final_minimum_taxid_frequency=5
-
-#### Section 4: final annotation
-final_annotation=True
-FDR=0.05            #false discovery rate
-min_peptide_count=1 #minimum occurrence for each unique peptide
-remove_unannotated=False 
+final_denoise_remove=True
 
 
 
@@ -155,7 +142,7 @@ if "variable_tab" in kws.keys():
         kws.update(load_variables(kws.get("variable_tab")))
 
 #log keyword dictionary
-kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_CHEW.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
+kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_peplist2Annotation.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
 kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
 kws_df.columns=["Key","Value"]
 kws_df.set_index("Key").to_csv(kws_filename,sep="\t")
@@ -169,27 +156,33 @@ taxdf=read_table(taxdf_path,Keyword="OX").set_index("OX")
 taxdf.index=taxdf.index.astype(str)
 kws.update({"taxdf":taxdf}) 
 
-#%% Raw2peplist
-
-kws.update({"output_folder":"peplist"}) #update output_subfolder
-
-annotations=[]
-
-mzML_files=raw2mzML() 
 
 
-#annotate de novo
-if SMSNet: 
-    mgf_files=raw2mgf()
-    SMSNet_files=SMSNet_annotation(input_files=mgf_files)
-    annotations+=SMSNet_files
-    
-#annotate with clustered database
-if MSFragger: 
-    MSFragger_files=MSFragger_annotation(input_files=mzML_files,database_path=clustered_database_fasta)
-    annotations+=MSFragger_files
+#%% parse input files
 
-Diamond_fasta=write_to_Diamond_fasta(input_files=annotations)
+all_inp=[]
+
+
+for i in [mzML_files,SMSNet_files]:
+
+    if type(i)==str:
+        if os.path.isdir(i):
+            x=[str(Path(i,f)) for f in os.listdir(i)]
+            if len(x):
+                i=x
+    if type(i)==str:
+        i=i.split()
+    if type(i)==str:
+        i=[i]
+
+    all_inp+=i
+
+SMSNet_files=[i for i in all_inp if i.endswith("SMSNET.tsv")]
+mzML_files=[i for i in all_inp if i.endswith(".mzML" or ".raw")]
+
+SMSNet=len(SMSNet_files)
+  
+
 
 #%% Initial_db
 
@@ -209,6 +202,7 @@ if initial_minimum_taxid_frequency:
     composition,richness,entries=write_database_composition(input_file=initial_target)
     taxids=composition[composition["Count"]>=initial_minimum_taxid_frequency].index.tolist() 
     initial_target=filter_Database_taxonomy(input_file=initial_target,taxids=taxids)
+
 
 #%% Refine_db
 
@@ -247,28 +241,3 @@ if SMSNet:  #construct diamond DB for tag alignment
     final_database_dmnd=make_diamond_database(input_file=final_database) #this is a diamond databse with decoy proteins
     
 
-
-#%% Final_annotation
-
-if final_annotation:
-
-    final_annotations=[]
-    
-    if SMSNet: #align de novo tags
-        Alignment=Diamond_alignment(input_file=Diamond_fasta,database_path=final_database_dmnd)  #if diamond_fasta exists..
-        final_annotations+=add_proteins_SMSNet(input_files=SMSNet_files,Alignment=Alignment,
-                                               Exact_tag=final_target)    
-    
-    if MSFragger: 
-        final_annotations+=MSFragger_annotation(input_files=mzML_files,database_path=final_database,params_path=params_final)
-    
-    
-    
-    
-    #%% Post processing
-    
-    kws.update({"output_folder":"output"})
-    
-    Post_processing(input_files=final_annotations)
-        
-    
