@@ -1,2 +1,4 @@
 # CHEW
-Draft version for Metaproteomics symposium 23
+
+
+![alt text](https://github.com/[username]/[reponame]/blob/[branch]/image.jpg?raw=true)
