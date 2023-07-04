@@ -66,8 +66,9 @@ based for Dump-taxa (unclassified or uncultured sequences)
 Additionally, it needs a clustered database, an unclustered database, and a unclusterd diamond database.
 To function properly, headers of the unclustered database need to be prepped to a CHEW compatible format,
 which means the id of each fasta header should contain the "taxonomy id", as such >Accession|...|"taxonomy id".
+This header renaming is automated during database prepping.
 
-Downloading, prepping of databases and diamond database construction is done with `4_Download_unclustered_database.py`
+Downloading, prepping of databases and diamond database construction is done automatically with `4_Download_unclustered_database.py`
 This script can download a variety of different databases UniProtKB (default) Swiss-Prot, TrEMBL, Uniref100,90,50 RefSeq, NCBI_NR and GTDB
 The database prepping function is also included as standalone in `db_prepper.py` 
 Additionally, there are several arguments supplied when prepping the CHEW database, which as default includes:
