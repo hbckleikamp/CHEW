@@ -108,7 +108,8 @@ Focus a database from a list of proteins or taxonomy ids: <br>
 Run complete CHEW pipeline with MSFragger (db search) and SMSNet (de novo): <br>
 `CHEW.py -input_files "folder with raw files"  -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path" -MSFragger 1 -SMSNet 1`
 
-
+Run  CHEW pipeline with only MSFragger (db search) without final annotation (up to database construction): <br>
+`CHEW.py -input_files "folder with raw files"  -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path" -MSFragger 1 -final_annotation 0`
 
 
 #### Licensing
