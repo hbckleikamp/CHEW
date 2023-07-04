@@ -1,7 +1,7 @@
 # CHEW
 
 
-https://github.com/hbckleikamp/CHEW/edit/main/README.md
+
 
 
 To improve accessibility CHEW is constructed as a collection of modular routines.
