@@ -60,7 +60,7 @@ the script `2_Create_taxdf.py` creates a rank normalized file containing all lin
 based for Dump-taxa (unclassified or uncultured sequences)
 
 Additionally, it needs a clustered database, an unclustered database, and a unclusterd diamond database.
-The function properly, headers of the unclustered database need to be prepped to a CHEW compatible format,
+To function properly, headers of the unclustered database need to be prepped to a CHEW compatible format,
 which means the id of each fasta header should contain the "taxonomy id", as such >Accession|...|"taxonomy id".
 
 Downloading, prepping of databases and diamond database construction is done with `4_Download_unclustered_database.py`
@@ -72,10 +72,22 @@ Eeach of these parameters can be changed manually, or be changed when running th
 
 
 ### Example CLI commands
+Further documentation and syntax is supplied within each individual script.
 
-`tax_count_targets="Spectral_counts"`, `tax_count_methods=""`, `fun_count_targets="Spectral_counts"`, `fun_count_methods=""`
+Download RefSeq, prep database and make DIAMOND database: <br>
+`4_Download_unclustered_database.py -DB RefSeq`
 
-<br>
+just Download GTDB, without preping database nor making DIAMOND database: <br>
+`4_Download_unclustered_database.py -DB GTDB -make_dmnd 0 -prepdb 0` 
+
+Prep existing database for CHEW, retain non-prokaryotic sequences and Dump taxids: <br>
+`db_prepper.py "path to db" -BacArch_only 0 -No_Dump 0` 
+
+Convert raw files to mzML: <br>
+`raw2mzML -input_files "folder with raw files"`
+
+Run complete CHEW pipeline with MSFragger (db search) and SMSNet (de novo): <br>
+`CHEW.py -input_files "folder with raw files"  -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path" -MSFragger 1 -SMSNet 1`
 
 
 
