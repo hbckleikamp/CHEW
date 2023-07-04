@@ -54,26 +54,26 @@ The script `run_Setup.py` executes each setup script in their default mode.
 
 Since MSFragger relies on an individual download liscence it should be manually downloaded:
 download MSFragger 3.5 .jar file from http://msfragger-upgrader.nesvilab.org/upgrader/, move to CHEW directory and extract contents
-CHEW is not compatible with mac/osx systems, as they require DIAMOND to be run externally.
+CHEW is not compatible with mac/osx systems, as they require DIAMOND to be run through miniconda.
 
 msconvert must also be downloaded manually from https://proteowizard.sourceforge.io/download.html
-and added to the default path of the operating system
+and added to the default path of the operating system.
 
 To allow easy lowest common ancestor annotation and compatibility with GTDB and NCBI taxonomies,
 the script `2_Create_taxdf.py` creates a rank normalized file containing all lineages fro GTDB and NCBI, and also flags NCBI taxids
 based for Dump-taxa (unclassified or uncultured sequences)
 
-Additionally, it needs a clustered database, an unclustered database, and a unclusterd diamond database.
+Additionally, it needs a clustered database, an unclustered database, and an unclustered diamond database.
 To function properly, headers of the unclustered database need to be prepped to a CHEW compatible format,
 which means the id of each fasta header should contain the "taxonomy id", as such >Accession|...|"taxonomy id".
-This header renaming is automated during database prepping.
+This header-renaming is automated during database prepping.
 
 Downloading, prepping of databases and diamond database construction is done automatically with `4_Download_unclustered_database.py`
-This script can download a variety of different databases UniProtKB (default) Swiss-Prot, TrEMBL, Uniref100,90,50 RefSeq, NCBI_NR and GTDB
-The database prepping function is also included as standalone in `db_prepper.py` 
-Additionally, there are several arguments supplied when prepping the CHEW database, which as default includes:
-removal of Eukaryotic sequences, removal of Dump taxa, euqating I and J to L, removal of Ambiguous amino acids.
-Eeach of these parameters can be changed manually, or be changed when running the setup scripts from the command line.
+This script can download a variety of different databases, such as: UniProtKB (default) Swiss-Prot, TrEMBL, UniRef100,90,50 RefSeq, NCBI_NR and GTDB databases.
+The database prepping function is also included as standalone in `db_prepper.py`. 
+Additionally, there are several arguments supplied when prepping the CHEW database, which as default include:
+removal of Eukaryotic sequences, removal of Dump taxa, equating I and J to L and removal of Ambiguous amino acids.
+Each of these parameters can be changed manually, or be changed when running the setup scripts from the command line.
 
 Disclaimer: <br>
 While CHEW is designed to work with low memory requirements and high speed, it can write large temporary files to memory when using MSFragger and DIAMOND.
@@ -88,7 +88,7 @@ Further documentation and syntax is supplied within each individual script.
 Download RefSeq, prep database and make DIAMOND database: <br>
 `4_Download_unclustered_database.py -DB RefSeq`
 
-just Download GTDB, without preping database nor making DIAMOND database: <br>
+just Download GTDB, without prepping database nor making DIAMOND database: <br>
 `4_Download_unclustered_database.py -DB GTDB -make_dmnd 0 -prepdb 0` 
 
 Prep existing database for CHEW, retain non-prokaryotic sequences and Dump taxids: <br>
@@ -98,13 +98,13 @@ Convert raw files to mzML: <br>
 `raw2mzML -input_files "folder with raw files"`
 
 Construct a peplist with only SMSNet: <br>
-`raw2peplist.py -input_files "  your input folder  "  -database_path " your database "  -SMSNet 1`
+`raw2peplist.py -input_files "  folder with raw files  "  -database_path " your database "  -SMSNet 1`
 
 Run database construction from peplist: <br>
 `peplist2Final_DB.py -mzML_files "path" -peplist "path" -clustered_database_fasta "path" -unclustered_database_fasta "path" -unclustered_database_dmnd "path"`
 
 Focus an existing database: <br>
-`Refine_DB.py -input_files "  mzML folder  " -database_path " your database "`
+`Refine_DB.py -input_files "  folder with raw or mzML files  " -database_path " your database "`
 
 Focus a database from a list of proteins or taxonomy ids: <br>
 `Construct_DB.py -input_file "  tsv file with proteins or taxonomy ids  " -database_path " your database "` 
