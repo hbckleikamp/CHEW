@@ -46,7 +46,7 @@ Fig. 1 CHEW workflow subroutines
 
 
 
-### Running CHEW
+### CHEW Setup
 
 CHEW relies on external softwares for spectrum annotation (MSFragger, SMSNet) and alignment (DIAMOND).
 The folder Setup contains individual scripts to setup up CHEW on your own system.
