@@ -2,7 +2,7 @@
 
 
 CHEW (cyclic hybrid/homology environmental workflow)
-is a data analysis pipeline that facilitates accesible metaprotoemics database construction and annotation.
+is a data analysis pipeline that facilitates accesible metaproteomics database construction and annotation.
 
 
 
@@ -11,7 +11,7 @@ CHEW can be executed as a single script, or if only parts of the CHEW pipeline s
 For example, if the user only wishes to convert raw to mzML, then the subroutine raw2mzML can be executed.
 
 
-To further improve accesibility, each subroutine can be executed in a variety of ways.
+To further improve accessibility, each subroutine can be executed in a variety of ways.
 A subroutine can be run directly from a python interpreter (Such as Spyder), or a subroutine can be callied from a command line interface. This also means that users can decide which parts of the CHEW pipeline they use in their workflows.
 For example when the user wants to construct a focused databse from their own custom peplist, if other softwares are used than SMSNet or MSFragger, they can simply run Peplist2finalDB or Peplist2Annotation with their own custom peplist, and only use the latter half of the CHEW pipeline.
 
