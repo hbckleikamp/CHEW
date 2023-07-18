@@ -54,10 +54,10 @@ simple_masks=pd.read_csv(str(Path(basedir,"simple_unmasks.tsv")),sep="\t")
 #MSFragger filepaths
 MSFragger_jar_path=str(Path(basedir,"MSFragger-3.5.jar"))  
 pep_split_path=str(Path(basedir,"msfragger_pep_split_HK.py"))
+
 params_fast =str(Path(basedir,"closed_fragger_fast.params"))  #faster initial search
 params_mid  =str(Path(basedir,"closed_fragger_mid.params"))   #medium search during refinement
 params_final=str(Path(basedir,"closed_fragger_final.params")) #detailed search for smaller db
-
 
 
 #Base taxonomy filepaths
@@ -200,23 +200,22 @@ def raw2mzML(*,output_folder="mzML",**kwargs):
     if type(input_files)==str:
         if os.path.isdir(input_files):
             input_files=[str(Path(input_files,i)) for i in os.listdir(input_files) if i.endswith(".raw")]
-    if type(input_files)==str:
-        input_files=input_files.split()
-    if type(input_files)==str:
-        input_files=[input_files]
+        else: input_files=input_files.split()
+
     
     output_files=[]
     for input_file in input_files:
-        
         output_file=str(Path(output_folder,Path(input_file).stem+".mzML"))
-        
+        output_dir=str(Path(output_file).parents[0])
         
         if not input_file.endswith(".mzML"):
             output_files.append(output_file)
             
             command="cd" +' "'+output_folder+'" && msconvert '
             command+='"'+input_file+'"' 
-            command+=' --mzML --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
+            command+=' --mzML --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>" -o '+'"'+output_dir+'"'
+            #command+=' --mzML --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
+           
             print(command)
             stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
             
@@ -236,22 +235,24 @@ def raw2mgf(*,output_folder="mgf",**kwargs):
     if type(input_files)==str:
         if os.path.isdir(input_files):
             input_files=[str(Path(input_files,i)) for i in os.listdir(input_files) if i.endswith(".raw")]
-    if type(input_files)==str:
-        input_files=input_files.split()
-    if type(input_files)==str:
-        input_files=[input_files]
+        else: input_files=input_files.split()
+
+    #standard filter
+    #filter_conditions=' --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>" '
     
+    #more stringent filter to increase speed of SMSNet
+    filter_conditions=' --filter "peakPicking vendor" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>" --filter "threshold bpi-relative .005 most-intense" --filter "threshold count 50 most-intense" '
     output_files=[]
     for input_file in input_files:
         output_file=str(Path(output_folder,Path(input_file).stem+".mgf"))
-        output_files.append(output_file)
+        output_dir=str(Path(output_file).parents[0])
         
         if not input_file.endswith(".mgf"):
             output_files.append(output_file)
         
             command="cd" +' "'+output_folder+'" && msconvert '
             command+='"'+input_file+'"' 
-            command+=' --mgf --filter "peakPicking vendor" --filter "zeroSamples removeExtra" --filter "titleMaker Run: <RunId>, Index: <Index>, Scan: <ScanNumber>"'
+            command+=' --mgf '+filter_conditions+' -o '+'"'+output_dir+'"'
             print(command)
             stdout, stderr =subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
             
@@ -302,8 +303,13 @@ def MSFragger_annotation(*,
     if type(input_files)==str:
         input_files=[input_files]
     
-    input_files=list(set([raw2mzML(input_file) if input_file.endswith(".raw") else input_file for input_file in input_files])) #if raw, convert to mzML
-
+    #if raw, convert to mzML
+    for ix,input_file in enumerate(input_files):
+        if input_file.endswith(".raw"):
+            input_files[ix]=raw2mzML(input_files=input_file)[0]
+    input_files=[i for i in list(set(input_files)) if i.endswith(".mzML")]
+    
+    
     
     MSFragger_jar_path=str(Path(basedir,"MSFragger-3.5.jar"))  
     pep_split_path=str(Path(basedir,"msfragger_pep_split_HK.py"))
@@ -423,7 +429,7 @@ def SMSNet_annotation(*,output_folder="inital_annotation",**kwargs):
     
     #required arguments
     input_files=v.input_files 
-    check_required_args(v,["input_file"])
+    check_required_args(v,["input_files"])
     
     #default arguments
     output_folder,tmp_folder=v.output_folder,v.tmp_folder
@@ -442,7 +448,11 @@ def SMSNet_annotation(*,output_folder="inital_annotation",**kwargs):
     if type(input_files)==str:
         input_files=[input_files]
     
-    input_files=list(set([raw2mgf(input_file) if input_file.endswith(".raw") or input_file.endswith(".mzML")  else input_file for input_file in input_files])) #if raw or mzML, convert to mzML
+    for ix,input_file in enumerate(input_files):
+        if input_file.endswith(".raw") or input_file.endswith(".mzML"):
+            input_files[ix]=raw2mgf(input_files=input_file)[0]
+    input_files=[i for i in list(set(input_files)) if i.endswith(".mgf")]
+    
     
     output_files=[]
     for input_file in input_files:
@@ -460,45 +470,7 @@ def SMSNet_annotation(*,output_folder="inital_annotation",**kwargs):
         shutil.rmtree(str(Path(input_file).parents[0])+"_output")
     return output_files
 
-#Write MSfragger and PepNet files to fasta files fo Diamond alignment
 
-
-
-
-def parse_SMSNet_output(input_file,simple_unmask,SMSNet_ppm,SMSNet_minscore):
-    
-    pepdf=""
-    if type(input_file)==str:
-        pepdf=pd.read_csv(input_file,sep="\t")
-    if isinstance(input_file, pd.DataFrame):
-        pepdf=input_file
-        
-    
-    if SMSNet_ppm: pepdf=pepdf[pepdf['MassError(ppm)'].abs()<=SMSNet_ppm]
-    if SMSNet_minscore: pepdf=pepdf[pepdf.Scores.str.rsplit(";",expand=True).astype(float).mean(axis=1)>=SMSNet_minscore]
-    if simple_unmask: #unmask simple combinations(1 or 2)
-        preds=pepdf["Prediction"].str.replace("I","L").str.replace("J","L").drop_duplicates() #equate I and J to L
-        
-        masks=preds.str.replace(")","(",regex=False).str.split("(",regex=False).explode() 
-        masses=list(set(masks[masks.str.contains(".",regex=False)].astype(float).tolist()))
-        masses.sort()
-        
-        for m in masses:
-            match=simple_masks[(simple_masks["upper"]>m) & (simple_masks["lower"]<m)]
-            combs=sum([["".join(p) for p in itertools.permutations(c)] for c in match["compositions"]],[])
-            if len(combs): preds=preds.str.replace("("+str(m)+")",'"],'+str(combs)+',["',regex=False)
-                
-        preds='[["'+preds.str.lstrip('"],').str.rstrip('"[,')+'"]]'
-        preds=preds.str.replace('[["[','[[',regex=False).str.replace(']"]]',']]',regex=False).apply(eval)
-        preds=preds.apply(lambda x:list(itertools.product(*x))).explode().apply(lambda x: "".join(x)).rename("Prediction")
-       
-        pepdf.pop("Prediction")
-        pepdf=pepdf.merge(preds,left_index=True,right_index=True,how="right").reset_index()
-
-    #select longest tag for alignment
-    pepdf["tag"]=pd.Series([max(pep[::2],key=len) for pep in pepdf["Prediction"].str.upper().str.replace("(",")",regex=False).str.split(")",regex=False)],name="longest_tag") 
-
-    return pepdf
 
 from more_itertools import sliced
 import more_itertools as mit
@@ -512,9 +484,12 @@ def add_proteins_SMSNet(*,
                     SMSNet_ppm=False,       #max ppm tolerance
                     SMSNet_minscore=False,  #mininum mean peptide score
                     Exact_tag=False,        #database to use for exact substring search (Optional)
-                    min_tag_length=4,       #minimum tag length for exact substring search
+                    min_tag_length=5,       #minimum tag length for exact substring search
+                    max_no_proteins=10,     #maxmimum number of proteina accessions added (limits file size for unspecific tags)
+                    
                     **kwargs):
  
+
     
     v=add_proteins_SMSNet.vars #parse function arguments
     
@@ -524,13 +499,35 @@ def add_proteins_SMSNet(*,
     SMSNet_ppm=v.SMSNet_ppm
     SMSNet_minscore=v.SMSNet_minscore
     Exact_tag=v.Exact_tag
+    min_tag_length=v.min_tag_length
+    max_no_proteins=v.max_no_proteins
     
     #required arguments
     input_files=v.input_files 
     Alignment=v.Alignment
     check_required_args(v,["input_files","Alignment"])
 
-    
+#%% Test
+
+# add_proteins_SMSNet(input_files=SMSNet_files,Alignment=Alignment,
+#                                        Exact_tag=final_target)      
+
+    input_files=["C:/MP-CHEW/CHEW/Mix24/Initial_annotation/Q20518_Mix24X_SMSNET.tsv",
+"C:/MP-CHEW/CHEW/Mix24/Initial_annotation/Q20516_Mix24X_SMSNET.tsv",
+"C:/MP-CHEW/CHEW/Mix24/Initial_annotation/Q20517_Mix24X_160629055637_SMSNET.tsv"]
+
+    Alignment="C:/MP-CHEW/CHEW/Swiss-Prot_Mix24dn/peplist/peplist.tsv"
+
+    Exact_tag="C:/MP-CHEW/CHEW/Swiss-Prot_Mix24dn/final/ft_target.fa"       #optionally add found protein output fasta file for further functional annotation  
+    simple_unmask=True
+    SMSNet_ppm=False       #max ppm tolerance
+    SMSNet_minscore=False  #mininum mean peptide score
+
+    min_tag_length=5       #minimum tag length for exact substring search
+    max_no_proteins=10     #maxmimum number of proteina accessions added (limits file size for unspecific tags)
+                    
+                    
+                    
     al=pd.concat([i for i in Diamond_alignment_Reader(Alignment)])
     al["Proteins"]=al["sseqid"]
     al=al[["tag","Proteins"]].groupby("tag")["Proteins"].apply(lambda x: " ".join(x))
@@ -561,45 +558,86 @@ def add_proteins_SMSNet(*,
     
     if Exact_tag:  #Optimized substring search for exact string unmasking
         print("SMSNet exact tag searching")
-        unitags=pd.concat(utags).drop_duplicates()
+        unitags=pd.concat(utags).drop_duplicates().set_index("tag")
+        unitags["no_Proteins"]=0
+        unitags["Proteins"]=""
         
-        groups=unitags.groupby("len")["tag"]
+        unspecifics=[]
+        
+        
         recs=SeqIO.parse(Exact_tag,format="fasta")
         chunks=chunk_gen(recs)
         
         for ic,chunk in enumerate(chunks):
+            print(ic)
             df=pd.DataFrame([[r.id,str(r.seq)] for r in chunk],columns=["id","tag"])
             df.tag+="*"
             
-            for index_slice in sliced(range(len(df)), 100):
+            
+            xs=pd.Series()
+            groups=unitags.groupby("len")
+            for index_slice in sliced(range(len(df)), 10000):
                 cdf = df.iloc[index_slice] # e
                 ids=cdf.id
                 mw=cdf.tag.apply(lambda x: ["".join(w) for w in  mit.windowed(x,min_tag_length)]).explode().reset_index().set_index("tag")
+                
+                smw=mw.groupby("tag").size()
+                mw=mw[mw.index.isin(smw[smw<=max_no_proteins].index)]
+                
                 e=np.array(mw.index.str[-1].tolist())
                 
                 c=0
+                
                 for n,g in groups:
+                    "i"+1
                     c+=1
+                    print(c)
+                    print(len(unitags))
                     g=g[g.isin(mw.index)]
                     
                     if len(g):
                         match=mw.loc[g.tolist()]
                         match["Proteins"]=ids.loc[match["index"].tolist()].values
-                        ms.append(match)
+                        
+                        s=match.groupby("tag").size()
+                        unitags.loc[s.index,"no_Proteins"]+=s.values
+                        
+                        
+                        unspecific=unitags[unitags["no_Proteins"]>max_no_proteins].index
+                        unspecifics.append(s)
+                        unitags=unitags[~unitags.index.isin(unspecific)]
+                        
+                        ps=match[match.index.isin(unspecific)].groupby("tag")["Proteins"].apply(" ".join)+" "
+                        unitags.loc[ps.index,"Proteins"]+=ps.values
+                        "i"+1
+                        
+
+                    
                       
                     mw=mw.iloc[:-1]
                     mw.index+=e[c:]
                         
-        ms=pd.concat(ms)
-        gp=ms.groupby("tag")["Proteins"].apply(" ".join)
-    
+
+        
+        #%%
+        #do an aggregate with sum and join
+        
+        gp=ms.groupby("tag")["Proteins"].apply(" ".join).str.strip()
+        gp[gp.str.contains(" unspecific ")]=""
+    #%%
         for ix,pepdf in enumerate(pepdfs):
             pepdf["Proteins"]=pepdf.merge(gp,on="tag",how="left")[["Proteins_x","Proteins_y"]].ffill(axis=1)["Proteins_y"].values
+            
+            pepdf.loc[pepdf["Proteins"]!="","no_Proteins"]=1+pepdf.loc[pepdf["Proteins"]!="","Proteins"].str.strip().str.count(" ")
+            pepdf.loc[pepdf["no_Proteins"]>max_no_proteins,"Proteins"]=""
+            pepdf["no_Proteins"]=pepdf["no_Proteins"].fillna(0)
+            pepdf["Proteins"]=pepdf["Proteins"].fillna("")
             pepdfs[ix]=pepdf
-                
+            
+                #%%
     for ix,pepdf in enumerate(pepdfs):
         pepdf.to_csv(output_paths[ix],sep="\t")
-            
+            #%%
     return output_paths
 
 @passed_kwargs()
@@ -929,9 +967,10 @@ def write_database_composition(*,output_file="database_composition.tsv", **kwarg
     input_file=v.input_file
     check_required_args(v,["input_file"])
     taxdf=v.taxdf
-    
+      
     #default args
     output_folder,tmp_folder=v.output_folder,v.tmp_folder
+
 
     recs=SeqIO.parse(input_file,format="fasta")
     chunks=chunk_gen(recs)
@@ -948,11 +987,12 @@ def write_database_composition(*,output_file="database_composition.tsv", **kwarg
 
     tax_counts=pd.DataFrame.from_dict(Counter(taxa),orient="index",columns=["Count"])
     tax_counts=tax_counts.merge(taxdf,how="left",left_index=True,right_index=True).dropna().sort_values(by="Count",ascending=False)
+    
+ 
     tax_counts.to_csv(output_path,sep="\t")
            
     return tax_counts,len(tax_counts),entries #composition,"richness",total entries
     
-
 
 
 
@@ -1260,9 +1300,11 @@ def refine_database(*,
         prots=prots.explode("Proteins")
         prots["Decoy"]=prots["Proteins"].str.startswith("decoy_")
         prots["OX"]=prots["Proteins"].str.replace("decoy_","").str.split("|").apply(lambda x: x[-1]) 
-        prots[ranks]=taxdf.loc[prots["OX"].tolist(),ranks].values
-    
-
+        
+        #prots[ranks]=taxdf.loc[prots["OX"].tolist(),ranks].values 
+        prots=prots.merge(taxdf,left_on="OX",right_index=True,how="inner") #deal with erroneous taxids  
+ 
+        
     
         #filter proteins based on frequency and precision of their taxonomy
         g=prots.groupby([weight_rank,"Decoy"]).size()
@@ -1308,7 +1350,7 @@ def refine_database(*,
     
     return tlca,database_path,DB_in_mem
 
-
+@passed_kwargs()
 def Post_processing(*,
                     max_evalue=10,
                     Top_score_fraction=0.9,
@@ -1319,10 +1361,17 @@ def Post_processing(*,
                     FDR=0.05,
                     min_peptide_count=1,
                     remove_unannotated=False,
+
+                    max_no_proteins=10,     #maximum different number of proteins linked to a single peptide
+                    
+                    mgf_files="",           #optionally add information from list of mgf files (adds intensity, charge and m/z)
+                    database="",            #optionally add found protein output fasta file for further functional annotation  
+                    
+                    
                     **kwargs):
                     
     
-    v=write_to_Diamond_fasta.vars #parse function arguments
+    v=Post_processing.vars #parse function arguments
     
     #required arguments
     input_files=v.input_files 
@@ -1336,16 +1385,55 @@ def Post_processing(*,
     SMSNet_minscore=v.SMSNet_minscore
     FDR=v.FDR
     min_peptide_count=v.min_peptide_count
-    remove_unannotated=v.remove_unannoatated
+    remove_unannotated=v.remove_unannotated
+    max_no_proteins=v.max_no_proteins
     
+    mgf_files=v.mgf_files
+    database=v.database #database used for writing output protein fasta
+    
+    taxdf=v.taxdf
+    
+    
+    #%% Test
+    
+    input_files=["C:/MP-CHEW/CHEW/Mix24/Initial_annotation/Q20518_Mix24X_SMSNET.tsv",
+"C:/MP-CHEW/CHEW/Mix24/Initial_annotation/Q20516_Mix24X_SMSNET.tsv",
+"C:/MP-CHEW/CHEW/Mix24/Initial_annotation/Q20517_Mix24X_160629055637_SMSNET.tsv"]
+
+
+
+    max_evalue=10
+    Top_score_fraction=0.9
+   
+    SMSNet_ppm=20      #max ppm tolerance
+    SMSNet_minscore=False  #minum mean peptide score
+    
+    FDR=0.05
+    min_peptide_count=1
+    remove_unannotated=False
+
+    max_no_proteins=10   #maximum different number of proteins linked to a single peptide
+    
+    mgf_files="C:/MP-CHEW/CHEW/mgf"        #optionally add information from list of mgf files (adds intensity, charge and m/z)
+    database="C:/MP-CHEW/CHEW/Swiss-Prot_Mix24dn/final/ft_target.fa"       #optionally add found protein output fasta file for further functional annotation  
+    
+    #%%
+    
+    
+    #### parsing input files 
     if type(input_files)==str:
         if os.path.isdir(input_files):
             input_files=[str(Path(input_files,i)) for i in os.listdir(input_files) if i.endswith(".SMSNet.tsv") or i.endswith(".pin")]
-    if type(input_files)==str:
-        input_files=input_files.split()
-    if type(input_files)==str:
-        input_files=[input_files]
+        else: input_files=input_files.split()
+
     input_files.sort()
+    
+    if len(mgf_files):
+        if type(mgf_files)==str:
+            if os.path.isdir(mgf_files):
+                mgf_files=[str(Path(mgf_files,i)) for i in os.listdir(mgf_files) if i.endswith(".mgf")]
+            else: mgf_files=mgf_files.split()
+    
     
     pin_files=[i for i in input_files if i.endswith(".pin")]
     SMSNet_files=[i for i in input_files if i.endswith("SMSNet.tsv")]
@@ -1355,10 +1443,16 @@ def Post_processing(*,
             print("warning: unequal amount of SMSNet_files and MSFragger files detected")
             
     
-    cols=['Peptide',"Proteins",'ScanNr','ExpMass','hyperscore','log10_evalue',"Prediction","mean_score","SMSNet_score", "evalue",'MassError(ppm)'] #retained columns
+    cols=['Peptide',"Proteins",'ScanNr','ExpMass','hyperscore','log10_evalue',"Prediction","mean_score","SMSNet_score", "evalue",'MassError(ppm)',"no_Proteins"] #retained columns
           
-    
+    #outputs
     found_proteins=set()
+    taxcounts=[]
+    protcounts=[]
+    unique_protcounts=[]
+    taxints=[]
+    protints=[]
+    unique_protints=[]
     
     #make file pairs
     pairs=[]
@@ -1379,51 +1473,64 @@ def Post_processing(*,
     
     
     for pair in pairs:
-        print(len(pair))
-    
-    
+        print(pair[0])
         pepdfs=[]
         pfile=""
+        mgf_info=""
         for file in pair:
 
-            try:
-                pepdf=pd.read_csv(file,sep="\t")
-            except:
-                pepdf=read_pin(file)
+            if file.endswith(".mgf"):
+                mgf_info=get_mgf_info(file)
+            else:
+
                 
-            if file.endswith(".pin"):
-                pfile=file
-    
-    
-            c=pepdf.columns
-            if "Peptide" in c: pepdf["Peptide"]=pepdf["Peptide"].apply(lambda x: re.sub("[\[\[].*?[\]\]]", "", x)).str.split(".").apply(lambda x: x[1]).str.replace("I","L").str.replace("J","L") #remove ptms in peptides
-            if "Proteins" in c: pepdf["Proteins"]=pepdf["Proteins"].str.replace("\t"," ",regex=True)
-            if "tag" in c: pepdf["Peptide"]=pepdf["tag"].str.replace("I","L").str.replace("J","L") #remove ptms in peptides
-            if "Scores" in c: pepdf["SMSNet_score"]=pepdf["Scores"].str.rsplit(";",expand=True).astype(float).sum(axis=1)
-            if "ScanNum" in c: pepdf["ScanNr"]=pepdf["ScanNum"]
-            if 'ObservedM+H' in c: pepdf["ExpMass"]=pepdf['ObservedM+H']-1.007276466621 #-H+
-            if  "log10_evalue" in c: pepdf["evalue"]=10**pepdf.log10_evalue.astype(float)
-            
-            c=pepdf.columns
-            c=[i for i in c if i!="index" and "Unnamed:" not in i]
-            
-            
-            pepdfs.append(pepdf[[i for i in cols if i in c]].reset_index(drop=True).drop_duplicates())
+                if file.endswith(".pin"):
+                    pepdf=read_pin(file)
+                    pfile=file
+ 
+                else:
+                    pepdf=pd.read_csv(file,sep="\t")
+        
+        
+                c=pepdf.columns
+                if "Peptide" in c: pepdf["Peptide"]=pepdf["Peptide"].apply(lambda x: re.sub("[\[\[].*?[\]\]]", "", x)).str.split(".").apply(lambda x: x[1]).str.replace("I","L").str.replace("J","L") #remove ptms in peptides
+                if "Proteins" in c: pepdf["Proteins"]=pepdf["Proteins"].str.replace("\t"," ",regex=True) #shouldnt Proteins alsways be a column?
+                if "no_Proteins" not in c and "Proteins" in c : pepdf["no_Proteins"]=1+pepdf["Proteins"].str.strip().str.count(" ") 
+
+                if "tag" in c: pepdf["Peptide"]=pepdf["tag"].str.replace("I","L").str.replace("J","L") #remove ptms in peptides
+                if "Scores" in c: pepdf["SMSNet_score"]=pepdf["Scores"].str.rsplit(";",expand=True).astype(float).sum(axis=1)
+                if "ScanNum" in c: pepdf["ScanNr"]=pepdf["ScanNum"]
+                if 'ObservedM+H' in c: pepdf["ExpMass"]=pepdf['ObservedM+H']-1.007276466621 #-H+
+                if  "log10_evalue" in c: pepdf["evalue"]=10**pepdf.log10_evalue.astype(float)
+                
+                c=pepdf.columns
+                c=[i for i in c if i!="index" and "Unnamed:" not in i]
+                
+                
+                pepdfs.append(pepdf[[i for i in cols if i in c]].reset_index(drop=True).drop_duplicates())
     
         pepdfs=pd.concat(pepdfs,axis=0,ignore_index=True).reset_index(drop=True)
         pepdfs["Decoy"]=pepdfs["Proteins"].str.contains("decoy_").fillna(False)
         c=pepdfs.columns
         pepdfs["ScanNr"]=pepdfs["ScanNr"].astype(int)
+        if "no_Proteins" in c: 
+            pepdfs.loc[pepdfs["no_Proteins"].fillna(0)>max_no_proteins,"Proteins"]=""
+        
+        if len(mgf_info): pepdfs=pepdfs.merge(mgf_info,on="ScanNr",how="left")
+        
         for i in ["ExpMass","hyperscore","evalue"]:
             if i in c:
                 pepdfs[i]=pepdfs[i].astype(float) 
+
 
     
         ##### De novo and non-denovo comparison
         if not pfile:
             pfile=file  
       
-        basepath=str(Path(Path(pfile).parents[0],Path(pfile).stem))  
+        basename=Path(pfile).stem
+        #basepath=str(Path(Path(pfile).parents[0],basename))  
+        basepath=str(Path(output_folder,basename))  
     
         if ("hyperscore" in c) and ("SMSNet_score" in c):
         
@@ -1510,19 +1617,14 @@ def Post_processing(*,
             plt.savefig(basepath+"dn_QC.png",dpi=300,bbox_inches="tight")
             pv.to_csv(basepath+"_dn_QC.tsv",sep="\t")
             
-    
-      
-        if not pfile:
-            pfile=file  
-      
-        basepath=str(Path(Path(pfile).parents[0],Path(pfile).stem))  
-      
+
+       
         #Filtering
         if remove_unannotated:                       pepdfs=pepdfs[pepdfs["Proteins"].notnull()]
         if "evalue" in c and max_evalue:             pepdfs=pepdfs[pepdfs["evalue"]<=max_evalue]
         if "hyperscore" in c and Top_score_fraction: pepdfs=pepdfs[(pepdfs["hyperscore"]/pepdfs.groupby(["ScanNr","ExpMass"])["hyperscore"].transform('max'))<=(1/Top_score_fraction)]
-        if 'MassError(ppm)' in c and SMSNet_ppm:     pepdfs=pepdfs[pepdfs["MassError(ppm)"].abs()<=SMSNet_ppm]
-        if 'SMSNet_score' in c and SMSNet_minscore:  pepdfs=pepdfs[pepdfs['SMSNet_score'].abs()>=SMSNet_minscore]
+        if 'MassError(ppm)' in c and SMSNet_ppm:     pepdfs=pepdfs[pepdfs["MassError(ppm)"].fillna(0).abs()<=SMSNet_ppm]
+        if 'SMSNet_score' in c and SMSNet_minscore:  pepdfs=pepdfs[pepdfs['SMSNet_score'].fillna(0).abs()>=SMSNet_minscore]
             
         if min_peptide_count: 
             s=pepdfs.groupby("Peptide").size()
@@ -1550,17 +1652,114 @@ def Post_processing(*,
         edf["Proteins"]=edf["Proteins"].str.split()
         edf=edf.explode("Proteins")
         edf["taxids"]=edf["Proteins"].fillna("|").str.split("|").apply(lambda x: x[-1])
-        edf[taxdf.columns]=taxdf.loc[edf["taxids"].tolist()].values
+        
+        edf=edf.merge(taxdf,left_on="taxids",right_index=True,how="inner") #deal with erroneous taxids  
+        
+        #edf[taxdf.columns]=taxdf.loc[edf["taxids"].tolist()].values 
         lins=edf[ranks].reset_index().fillna("")
+        
+       
+    
         pepdfs[ranks]=lins.groupby("index")[ranks].nth(0)[(lins.groupby("index")[ranks].nunique()==1)].fillna("")   
-        pepdfs.to_csv(basepath+"_PSMs",sep="\t")
+        pepdfs.to_csv(basepath+"_PSMs.tsv",sep="\t")
         
         found_proteins.update(pepdfs.Proteins.str.split().explode().tolist())
+        
+        
+        
+        protcounts.append(edf.groupby("Proteins").size().rename(basename))
+        unique_protcounts.append(edf[edf["no_Proteins"]==1].groupby("Proteins").size().rename(basename))
+        taxcounts.append(pepdfs.groupby(ranks.tolist()).size().rename(basename))
+        
     
-    print("writing found proteins")
-    filter_Database_proteins(input_file=final_target,proteins=found_proteins,output_file="found_proteins.fa")
+    
+        if "intensity" in c:
+            protints.append(edf.groupby("Proteins")["intensity"].sum().rename(basename))
+            unique_protints.append(edf[edf["no_Proteins"]==1].groupby("Proteins")["intensity"].sum().rename(basename))
+            taxints.append(pepdfs.groupby(ranks.tolist())["intensity"].sum().rename(basename))
+    
+    #write combined outputs
+    cnames=["tax_counts","prot_counts","unique_prot_counts","tax_ints","prot_ints","unique_prot_ints"]
+    for ix_c,i in enumerate([taxcounts,protcounts,unique_protcounts,taxints,protints,unique_protints]):
+        if len(i):
+            pd.concat(i,axis=1).to_csv(str(Path(output_folder,cnames[ix_c]+".tsv")),sep="\t")
+    
+    
+    if len(database):
+        print("writing found proteins")
+        filter_Database_proteins(input_file=database,proteins=found_proteins,output_file="found_proteins.fa")
 
 #%% Helper funs
+
+
+
+def get_mgf_info(file):
+    
+    
+    with open(file,"r") as f:
+        t=f.readlines()
+
+
+
+    scans=[]
+    for i in t:
+        i=i.split("\n")[0]
+        
+        
+        if i.startswith("TITLE="):
+            scan=i.split("scan=")[1]
+        
+        elif i.startswith("PEPMASS"):
+       
+            s=i.split("PEPMASS=")[1].split()
+            if len(s)==1:
+                s=s+[0]
+                
+            mass,intensity=s
+        
+        elif i.startswith("CHARGE="):
+            charge=i.split("=")[1].split("+")[0]
+            scans.append([scan,mass,intensity,charge])
+            
+    scandf=pd.DataFrame(scans,columns=["ScanNr","m/z","intensity","charge"]).astype(float)
+    scandf["ScanNr"]=scandf["ScanNr"].astype(int)
+        
+    return scandf
+
+def parse_SMSNet_output(input_file,simple_unmask,SMSNet_ppm,SMSNet_minscore):
+    
+    pepdf=""
+    if type(input_file)==str:
+        pepdf=pd.read_csv(input_file,sep="\t")
+    if isinstance(input_file, pd.DataFrame):
+        pepdf=input_file
+        
+    
+    if SMSNet_ppm: pepdf=pepdf[pepdf['MassError(ppm)'].abs()<=SMSNet_ppm]
+    if SMSNet_minscore: pepdf=pepdf[pepdf.Scores.str.rsplit(";",expand=True).astype(float).mean(axis=1)>=SMSNet_minscore]
+    if simple_unmask: #unmask simple combinations(1 or 2)
+        preds=pepdf["Prediction"].str.replace("I","L").str.replace("J","L").drop_duplicates() #equate I and J to L
+        
+        masks=preds.str.replace(")","(",regex=False).str.split("(",regex=False).explode() 
+        masses=list(set(masks[masks.str.contains(".",regex=False)].astype(float).tolist()))
+        masses.sort()
+        
+        for m in masses:
+            match=simple_masks[(simple_masks["upper"]>m) & (simple_masks["lower"]<m)]
+            combs=sum([["".join(p) for p in itertools.permutations(c)] for c in match["compositions"]],[])
+            if len(combs): preds=preds.str.replace("("+str(m)+")",'"],'+str(combs)+',["',regex=False)
+                
+        preds='[["'+preds.str.lstrip('"],').str.rstrip('"[,')+'"]]'
+        preds=preds.str.replace('[["[','[[',regex=False).str.replace(']"]]',']]',regex=False).apply(eval)
+        preds=preds.apply(lambda x:list(itertools.product(*x))).explode().apply(lambda x: "".join(x)).rename("Prediction")
+       
+        pepdf.pop("Prediction")
+        pepdf=pepdf.merge(preds,left_index=True,right_index=True,how="right").reset_index()
+
+    #select longest tag for alignment
+    pepdf["tag"]=pd.Series([max(pep[::2],key=len) for pep in pepdf["Prediction"].str.upper().str.replace("(",")",regex=False).str.split(")",regex=False)],name="longest_tag") 
+
+    return pepdf
 
 def is_fasta(input_file):
     fasta=SeqIO.parse(input_file,"fasta")
@@ -1577,7 +1776,9 @@ def read_pin(pinfile):
     with open(pinfile, "r") as f:
         lines=f.readlines()    
     header=lines[0].replace("\n","").split("\t")
-    return pd.DataFrame([i.replace("\n","").split("\t",len(header)-1) for i in lines[1:]],columns=header)
+    df=pd.DataFrame([i.replace("\n","").split("\t",len(header)-1) for i in lines[1:]],columns=header)
+
+    return df[[i for i in header if i!=""]].drop_duplicates()
 
 
 #read alignment file to generator and filter on top x% scoring
@@ -1659,9 +1860,6 @@ def weighted_lca(df,*, #dataframe with at least a column called Peptide, and ran
     
     
     return lcas.fillna("")
-
-
-#%%
 
 
 def denoise_nodes(df, #lca df 

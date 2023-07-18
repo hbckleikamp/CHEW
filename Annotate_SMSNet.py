@@ -42,7 +42,7 @@ variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, 
 
 
 #Example syntax
-#Annotate_MSFragger.py -input_files "  your input folder -Output_directory "  your output folder   "
+#Annotate_SMSNet.py -input_files "  your input folder -Output_directory "  your output folder   "
 
 
 
@@ -82,4 +82,4 @@ locals().update(kws)
 
 #%% Annotate MSFragger
 
-SMSnet_annotation(input_files=input_files)
+SMSNet_annotation(input_files=input_files)

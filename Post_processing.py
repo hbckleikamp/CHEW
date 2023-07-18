@@ -36,8 +36,8 @@ input_files=[]    # list or space delimited string of filepaths or folder with a
 
 
 #Which annotation should be used? (one or more should be True)
-MSFragger=False
-SMSNet=False
+MSFragger=True
+SMSNet=True
 
 #Example syntax:
 #Post_processing.py -input_files "  your input folder  " -MSFragger 1 -SMSNet 1
@@ -63,7 +63,7 @@ FDR=0.05            #false discovery rate
 min_peptide_count=1 #minimum occurrence for each unique peptide
 remove_unannotated=False 
 
-
+database=""
 
 
 
@@ -110,11 +110,10 @@ if type(input_files)==str:
         x=[str(Path(input_files,i)) for i in os.listdir(input_files) if i.endswith("SMSNET.tsv") or i.endswith(".pin")]
         if len(x):
             input_files=x
-if type(input_files)==str:
-    input_files=input_files.split()
-if type(input_files)==str:
-    input_files=[input_files]
-
+    else:
+        input_files=input_files.split()
+        
+        
 annotations=[]
 
 if SMSNet: annotations+=[i for i in input_files if i.endswith("SMSNET.tsv")]

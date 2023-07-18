@@ -42,7 +42,7 @@ output_folder="annotations"
 variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, Value
 
 #default arguments
-params_path=params_fast                                     # path to params file with detailed MSFragger parameters
+params_path=str(Path(basedir,"closed_fragger_fast.params")) # path to params file with detailed MSFragger parameters
 max_no_hits=5                                               # max number of hits retained from each database split
 no_splits=None                                              # number of database splits, determines performance and temporary index size
 no_batches=None                                             # number of file splits,     determines performance and temporary index size
@@ -88,4 +88,4 @@ locals().update(kws)
 
 #%% Annotate MSFragger
 
-MSFragger_annotation(input_files=input_files,database_path=database)
+MSFragger_annotation(input_files=input_files,database_path=database_path)

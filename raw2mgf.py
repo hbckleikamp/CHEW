@@ -33,7 +33,7 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 input_files=""    # list or space delimited string of filepaths, or a folder 
 
 #Optional arguments
-Output_directory="" 
+#Output_directory="", output_folder=""
 variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, Value
 
 

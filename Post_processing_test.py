@@ -32,20 +32,41 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 #%% Define parameter dict (kws)
 
 #required arguments
-input_file=""    # .tsv file containing 
-database_path=""   #fasta database 
+input_files="C:/MP-CHEW/CHEW/Mix24dndb/final"    # list or space delimited string of filepaths or folder with annotations of MSFragger and SMSnet
+
+
+#Which annotation should be used? (one or more should be True)
+MSFragger=True
+SMSNet=False
 
 #Example syntax:
-#Construct_DB.py -input_file "  your input files  " -database_path " your database " 
+#Post_processing.py -input_files "  your input folder  " -MSFragger 1 -SMSNet 1
 
-#Optional arguments
+#output folders
 Temporary_directory=""
 Output_directory=""
-output_folder="final"
+output_folder="post_test"
 variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, Value
 
 #default arguments
-decoy_method="reverse"
+
+#MSFragger score cutoffs
+max_evalue=10
+Top_score_fraction=0.9  
+   
+#SMSNet score cutoffs
+SMSNet_ppm=20          #max ppm tolerance
+SMSNet_minscore=False  #minum mean peptide score
+
+#post processing
+FDR=0.05            #false discovery rate
+min_peptide_count=1 #minimum occurrence for each unique peptide
+remove_unannotated=False 
+
+database="C:/MP-CHEW/CHEW/Mix24dndb/final/ft_target.fa"
+mgf_files="C:/MP-CHEW/CHEW/mgf"
+
+
 
 #%% Update parameter dict (kws)
            
@@ -69,7 +90,7 @@ if "variable_tab" in kws.keys():
         kws.update(load_variables(kws.get("variable_tab")))
 
 #log keyword dictionary
-kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_ConstructDB.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
+kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_raw2fasta.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
 kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
 kws_df.columns=["Key","Value"]
 kws_df.set_index("Key").to_csv(kws_filename,sep="\t")
@@ -84,21 +105,23 @@ taxdf.index=taxdf.index.astype(str)
 kws.update({"taxdf":taxdf}) 
 
 
+if type(input_files)==str:
+    if os.path.isdir(input_files):
+        x=[str(Path(input_files,i)) for i in os.listdir(input_files) if i.endswith("SMSNET.tsv") or i.endswith(".pin")]
+        if len(x):
+            input_files=x
+    else:
+        input_files=input_files.split()
 
 
-#%% Final_db
-
-df=pd.read_csv(input_file,sep="\t")
-
-if "Taxids" in df.columns:
-    final_target=filter_Database_taxonomy(input_file=database_path,taxids=df["Taxids"].tolist())
-
-if "Proteins" in df.columns:
-    final_target=filter_Database_proteins(input_file=database_path,proteins=df["Proteins"].tolist())
-    
-final_decoy=write_decoy(input_file=final_target,method="reverse")
-final_database=merge_files([final_target,final_decoy])
 
 
+annotations=[]
+
+if SMSNet: annotations+=[i for i in input_files if i.endswith("SMSNET.tsv")]
+if MSFragger: annotations+=[i for i in input_files if i.endswith(".pin")]
+
+
+Post_processing(input_files=annotations)
     
 

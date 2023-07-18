@@ -34,13 +34,14 @@ input_files=""    # list or space delimited string of filepaths, or a folder
 
 #Optional arguments
 Output_directory="" 
+output_folder=""
 variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, Value
 
 
 
 
 #Example syntax
-#raw2mzML.py -input_files "  your input folder  " -Output_directory "  your output folder   "
+#raw2mzML.py -input_files "  your input folder  " -output_folder "  your output folder   "
 
 
 #%% Update parameter dict (kws)

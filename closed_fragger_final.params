@@ -1,6 +1,6 @@
 # MSFragger-3.5
 num_threads = 0                             # Number of CPU threads to use. 
-database_name = C:\MP-CHEW\CHEW\test_small\final\target_decoy.fa #database name here
+database_name = H:/Methanosarcina/uniprotkb_proteome_UP000033033_2023_07_13.fasta #database name here
 precursor_mass_upper = 20                   # Upper bound of the precursor mass window.
 precursor_mass_units = 1                    # Precursor mass tolerance units (0 for Da, 1 for ppm).
 data_type = 0                               # Data type (0 for DDA, 1 for DIA, 2 for DIA-narrow-window).
@@ -123,6 +123,9 @@ add_O_user_amino_acid = 0.000000 #237.14773 #0.000000               # O = pyrrol
 add_U_user_amino_acid = 0.000000 #207.975094 #0.000000              # U = selenocysteine (150.95363 Da)  (Non-standard HK,with fixed carbamidomethyl)
 add_X_user_amino_acid = 0.000000
 add_Z_user_amino_acid = 0.000000
+
+
+
 
 
 

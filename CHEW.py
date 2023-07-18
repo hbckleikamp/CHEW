@@ -15,7 +15,7 @@ except:
     pass
 
 from load_vars import *
-
+from CHEW_funs import params_fast, params_mid,params_final
 
 import warnings
 warnings.filterwarnings("ignore") #remove when debugging!
@@ -64,12 +64,15 @@ variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, 
 
 
 ### annotate_MSFragger
-params_path=str(Path(basedir,"closed_fragger_fast.params")) # path to params file with detailed MSFragger parameters
+
+
+
 max_no_hits=5                                       # max number of hits retained from each database split
 no_splits=None                                      # number of database splits, determines performance and temporary index size
 no_batches=None                                     # number of file splits,     determines performance and temporary index size
 
 #MSFragger score filters
+initial_params=str(Path(basedir,"closed_fragger_fast.params")) #detailed search for smaller db
 max_evalue=10
 Top_score_fraction=0.9 #in case of multiple top candidates retain the top scoring fraction
 
@@ -98,7 +101,7 @@ initial_minimum_taxid_frequency=20 #minimum taxid frequency that Diamond databas
 
 #### Section 3: refine_db
 #Refine MSFragger params
-refine_params_path=params_mid # path to params file with detailed MSFragger parameters
+refine_params=str(Path(basedir,"closed_fragger_mid.params")) 
 refine_no_splits=2            # number of database splits, determines performance and temporary index size
 refine_no_batches=1           # number of file splits,     determines performance and temporary index size
 
@@ -126,8 +129,9 @@ final_minimum_taxid_frequency=5
 
 #### Section 4: final annotation
 final_annotation=True
+final_params=str(Path(basedir,"closed_fragger_final.params")) #detailed search for smaller db
 FDR=0.05            #false discovery rate
-min_peptide_count=1 #minimum occurrence for each unique peptide
+min_peptide_count=5 #minimum occurrence for each unique peptide
 remove_unannotated=False 
 
 
@@ -176,17 +180,16 @@ kws.update({"output_folder":"peplist"}) #update output_subfolder
 annotations=[]
 
 mzML_files=raw2mzML() 
-
+mgf_files=raw2mgf()
 
 #annotate de novo
 if SMSNet: 
-    mgf_files=raw2mgf()
     SMSNet_files=SMSNet_annotation(input_files=mgf_files)
     annotations+=SMSNet_files
     
 #annotate with clustered database
 if MSFragger: 
-    MSFragger_files=MSFragger_annotation(input_files=mzML_files,database_path=clustered_database_fasta)
+    MSFragger_files=MSFragger_annotation(input_files=mzML_files,database_path=clustered_database_fasta,params_path=initial_params)
     annotations+=MSFragger_files
 
 Diamond_fasta=write_to_Diamond_fasta(input_files=annotations)
@@ -218,13 +221,16 @@ kws.update({"output_folder":"refine"})
 
 tlca,database_path,DB_in_mem=refine_database(input_files=mzML_files,
                                               database_path=initial_target,
-                                              params_path=params_mid,
+                                              params_path=refine_params,
                                               no_splits=refine_no_splits,
                                               no_batches=refine_no_batches
                                               
                                               )
 
 kws.update({"output_folder":"refine_final"})
+
+
+### make this into a function
 
 proteins,taxids=denoise_nodes(tlca,min_ratio=final_min_ratio,denoise_ranks=final_denoise_ranks,remove=True)
 
@@ -233,12 +239,14 @@ if final_minimum_taxid_frequency:
     composition,richness,entries=write_database_composition(input_file=database_path)
     taxids=composition[composition["Count"]>=final_minimum_taxid_frequency].index.tolist() 
 
+###
+
 print("final number of taxa in db: "+str(len(taxids)))
 
 #%% Final_db
 
 kws.update({"output_folder":"final"})
-
+print("retrieving proteomes")
 final_target=filter_Database_taxonomy(input_file=unclustered_database_fasta,taxids=taxids)
 final_decoy=write_decoy(input_file=final_target,method="reverse")
 final_database=merge_files([final_target,final_decoy])
@@ -260,7 +268,7 @@ if final_annotation:
                                                Exact_tag=final_target)    
     
     if MSFragger: 
-        final_annotations+=MSFragger_annotation(input_files=mzML_files,database_path=final_database,params_path=params_final)
+        final_annotations+=MSFragger_annotation(input_files=mzML_files,database_path=final_database,params_path=final_params)
     
     
     
@@ -269,6 +277,7 @@ if final_annotation:
     
     kws.update({"output_folder":"output"})
     
-    Post_processing(input_files=final_annotations)
+    Post_processing(input_files=final_annotations,database=final_database,no_splits=4)
         
-    
+
+
