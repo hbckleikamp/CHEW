@@ -15,7 +15,7 @@ except:
     pass
 
 from load_vars import *
-
+from config import *
 
 import warnings
 warnings.filterwarnings("ignore") #remove when debugging!
@@ -32,40 +32,25 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 #%% Define parameter dict (kws)
 
 #required arguments
+input_files=""     # list or space delimited string of filepaths, or folder
+mgf_files=""
+SMSNet_files=""    #
+database_path=""   #fasta file 
 
-database_path=""   #fasta file: database used to cunstruct diamond database and for exact string searching
-
-mzML_files=""      #optional: list or space delimited string or folder of filepaths mzML files, used for MSFragger
-SMSNet_files=""    #optional: list or space delimited string or folder of filepaths SMSNet files, used for SMSNet
-#should either supply a list of mzML (and or) SMSNet files
-peplist=""         #ofasta file: aligned against diamond database
-
-
-#Optional
+#Optional arguments
 Temporary_directory=""
 Output_directory=""
-output_file="final"
+output_folder="final"  
 variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, Value
 
-
-
 #default arguments
+params_path=params_mid                                 # path to params file with detailed MSFragger parameters
+max_no_hits=5                                               # max number of hits retained from each database split
+no_splits=None                                              # number of database splits, determines performance and temporary index size
+no_batches=None                                             # number of file splits,     determines performance and temporary index size
 
-#MSFragger score cutoffs
-max_evalue=10
-Top_score_fraction=0.9  
-   
-#SMSNet score cutoffs
-simple_unmask=True      #attempts to solve low complexity masked SMSNet regions
-SMSNet_ppm=20          #max ppm tolerance
-SMSNet_minscore=False  #minum mean peptide score
-Exact_tag=database_path #exact srting searching of SMSnet against a database
-
-#post processing
-FDR=0.05            #false discovery rate
-min_peptide_count=1 #minimum occurrence for each unique peptide
-remove_unannotated=False 
-
+#Example syntax
+#Annotate_MSFragger.py -input_files "  your input folder  " -database_path " your database " -Output_directory "  your output folder   "
 
 
 
@@ -91,7 +76,7 @@ if "variable_tab" in kws.keys():
         kws.update(load_variables(kws.get("variable_tab")))
 
 #log keyword dictionary
-kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_add_proteins_SMSNet.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
+kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_Annotate_MSFragger.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
 kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
 kws_df.columns=["Key","Value"]
 kws_df.set_index("Key").to_csv(kws_filename,sep="\t")
@@ -105,50 +90,14 @@ taxdf=read_table(taxdf_path,Keyword="OX").set_index("OX")
 taxdf.index=taxdf.index.astype(str)
 kws.update({"taxdf":taxdf}) 
 
-#%% Annotate final
+#%% Annotate MSFragger
 
-all_inp=[]
-
-
-for i in [mzML_files,SMSNet_files]:
-
-    if type(i)==str:
-        if os.path.isdir(i):
-            x=[str(Path(i,i)) for i in os.listdir(i)]
-            if len(x):
-                i=x
-    if type(i)==str:
-        i=i.split()
-    if type(i)==str:
-        i=[i]
-
-    all_inp+=i
-
-SMSNet_files=[i for i in all_inp if i.endswith("SMSNET.tsv")]
-mzML_files=[i for i in all_inp if i.endswith(".mzML" or ".raw")]
-
-annotations=[]
-
-if len(SMSNet_files):
+final_annotations=MSFragger_annotation(input_files=input_files,database_path=database_path)
     
-    #Aligning of SMSNet tags against diamond database
-    final_database_dmnd=make_diamond_database(input_file=database_path) 
-    if not len(peplist): peplist=write_to_Diamond_fasta(SMSNet_files)
-    Alignment=Diamond_alignment(input_file=peplist,database_path=final_database_dmnd)  
+if len(SMSNet_files): #identify de novo tags
+
+    final_annotations+=add_proteins_SMSNet(input_files=SMSNet_files,database_path=database_path)    
     
-    #adding proteins including Exact tag matches
-    annotations+=add_proteins_SMSNet(input_files=SMSNet_files,Alignment=Alignment)    
 
 
-if len(mzML_files): 
-    annotations+=MSFragger_annotation(input_files=mzML_files,database_path=database_path,params_path=params_final)
-
-
-
-
-#%% Post processing
-
-kws.update({"output_folder":"output"})
-
-Post_processing(input_files=final_annotations)
-    
+Post_processing(input_files=final_annotations,database=database_path,no_splits=4,mgf_files=mgf_files)

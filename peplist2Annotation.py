@@ -28,6 +28,10 @@ print(basedir)
 svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 
 
+import time
+start_time=time.time()
+
+
 
 
 #%% Define parameter dict (kws)
@@ -243,26 +247,23 @@ print("final number of taxa in db: "+str(len(taxids)))
 #%% Final_db
 
 kws.update({"output_folder":"final"})
-
+print("retrieving proteomes")
 final_target=filter_Database_taxonomy(input_file=unclustered_database_fasta,taxids=taxids)
 final_decoy=write_decoy(input_file=final_target,method="reverse")
 final_database=merge_files([final_target,final_decoy])
 
-if SMSNet:  #construct diamond DB for tag alignment
-    final_database_dmnd=make_diamond_database(input_file=final_database) #this is a diamond databse with decoy proteins
-    
+
 
 
 #%% Final_annotation
 
-
+MSFragger=1 #Always do final annotation hybrid!
 
 final_annotations=[]
 
-if SMSNet: #align de novo tags
-    Alignment=Diamond_alignment(input_file=Diamond_fasta,database_path=final_database_dmnd)  #if diamond_fasta exists..
-    final_annotations+=add_proteins_SMSNet(input_files=SMSNet_files,Alignment=Alignment,
-                                           Exact_tag=final_target)    
+if SMSNet: #identify de novo tags
+
+    final_annotations+=add_proteins_SMSNet(input_files=SMSNet_files,database_path=final_database)    
 
 if MSFragger: 
     final_annotations+=MSFragger_annotation(input_files=mzML_files,database_path=final_database,params_path=final_params)
@@ -276,4 +277,8 @@ kws.update({"output_folder":"output"})
 
 Post_processing(input_files=final_annotations,database=final_database,no_splits=4)
     
+#%%
+import time
+print("total elapsed time: "+str(time.time()-start_time))
+
 

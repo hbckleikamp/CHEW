@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 from collections import Counter
 
+
 def read_table(tabfile,*,
                Keyword=False, # "Value" or "Peptide" (Keyword is used in dynamic delimiter deetection)
                ):
