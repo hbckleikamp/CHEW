@@ -65,7 +65,7 @@ Path_to_taxonomy=str(Path(basedir,"parsed_taxonomy.tsv"))
 
 prepdb=True #after downloading prep DB with following arguments
 
-BacArch_only=True      # retain only Bacteria (and Archaea(!)) in database  
+Bacterial_only=True    # retain only Bacteria (and Archaea(!)) in database  
 Equate_IL=True         # change I and J into L 
 Remove_ambiguous=True  # remove ambiguous amino acids "B","X","Z","[","(" , and J in case IL is not equated
 No_Fragments=False     # remove incomplete sequences from UniprotKB contain (Fragment)/(Fragments) in header
@@ -95,7 +95,7 @@ ranks=["superkingdom","phylum","class","order","family","genus","species"]
 Ambiguous_AAs=["B","O","U","X","Z","[","("]
 decoy_delimiter="decoy_"
 decoy_method="reverse" #or "scramble"
-Path_to_taxonomy=str(Path(basedir,"parsed_taxonomy.tsv"))
+
 
 
 #%%
@@ -109,38 +109,38 @@ def chunk_gen(it,size=10**6):
     for _,g in itertools.groupby(it,lambda _:next(c)//size):
         yield g
 
+
 def prep_db(Path_to_db,Ambiguous_AAs=Ambiguous_AAs):
-    
     
     output_paths=[]
     if prepdb:
-        
         if os.path.isdir(Path_to_db):
-            input_paths=[str(Path(Path_to_db,i)) for i in os.listdir(Path_to_db)]
+            Path_to_db=[str(Path(Path_to_db,i)) for i in os.listdir(Path_to_db)]
         else:
-            input_paths=[input_paths]
+            Path_to_db=Path_to_db.split()
          
         #parse output_path
-        for input_path in input_paths:
-            
+        for input_path in Path_to_db:
+           
             if is_fasta(input_path):
                 
+                suf=Path(input_path).suffix
                 Output_path=input_path
-                if BacArch_only:     Output_path=Output_path.replace(".fasta","_BacArch.fasta")
-                if Remove_ambiguous: Output_path=Output_path.replace(".fasta","_NoAmb.fasta")
-                if No_Dump:          Output_path=Output_path.replace(".fasta","_NoDump.fasta")
-                if No_Fragments:     Output_path=Output_path.replace(".fasta","_NoFrag.fasta")
-                if Equate_IL:        Output_path=Output_path.replace(".fasta","_IJeqL.fasta")
-                if Add_decoy:        Output_path=Output_path.replace(".fasta","_Decoy.fasta")
-                if Add_taxid:        Output_path=Output_path.replace(".fasta","_taxid.fasta")
+                if Bacterial_only:   Output_path=Output_path.replace(suf,"_BacArch"+suf)
+                if Remove_ambiguous: Output_path=Output_path.replace(suf,"_NoAmb"+suf)
+                if No_Dump:          Output_path=Output_path.replace(suf,"_NoDump"+suf)
+                if No_Fragments:     Output_path=Output_path.replace(suf,"_NoFrag"+suf)
+                if Equate_IL:        Output_path=Output_path.replace(suf,"_IJeqL"+suf)
+                if Add_decoy:        Output_path=Output_path.replace(suf,"_Decoy"+suf)
+                if Add_taxid:        Output_path=Output_path.replace(suf,"_taxid"+suf)
         
                 output_paths.append(Output_path)
                 
                 # tax database and files
-                if BacArch_only or No_Dump:
+                if Bacterial_only or No_Dump:
                     taxdf=pd.read_csv(Path_to_taxonomy,sep="\t")
                 
-                if BacArch_only:
+                if Bacterial_only:
                     taxdf=taxdf[(taxdf["superkingdom"]=="Bacteria") | (taxdf["superkingdom"]=="Archaea")].astype(str)
                 
                 if No_Dump:
@@ -150,7 +150,7 @@ def prep_db(Path_to_db,Ambiguous_AAs=Ambiguous_AAs):
                 
                 once=True
                 Taxid_delimiter="GTDB"
-                recs=SeqIO.parse(Path_to_db,format="fasta")
+                recs=SeqIO.parse(input_path,format="fasta")
                 chunks=chunk_gen(recs)
                 
                 #write IL datbase
@@ -199,8 +199,8 @@ def prep_db(Path_to_db,Ambiguous_AAs=Ambiguous_AAs):
                         
                 if rm_prep:
                     shutil.rmtree(input_path)
-            
+
         return output_paths    
             
 
-prep_db(Database_path)
+prep_db(Path_to_db)

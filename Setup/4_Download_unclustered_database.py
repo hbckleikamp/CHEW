@@ -38,7 +38,7 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 
 
 
-DB="RefSeq" #UniProt, Swiss-Prot, TrEMBL, UniRef50, UniRef90, UniRef100, GTDB, NCBI_NR 
+DB="RefSeq" #UniProtKB, Swiss-Prot, TrEMBL, UniRef50, UniRef90, UniRef100, GTDB, NCBI_NR 
 rm_merge=True               # remove database after merging 
 output_folder=basedir       # where to put databases
 diamond_output_folder=""
@@ -47,7 +47,7 @@ Path_to_taxonomy=str(Path(basedir,"parsed_taxonomy.tsv"))
 diamond_path=str(Path(Path(basedir).parents[0],"diamond"))
 
 prepdb=True #after downloading prep DB with following arguments
-make_dmnd=True
+make_dmnd=True #create a diamond database
 
 
 BacArch_only=True      # retain only Bacteria (and Archaea(!)) in database  
@@ -126,14 +126,30 @@ def chunk_gen(it,size=10**6):
     for _,g in itertools.groupby(it,lambda _:next(c)//size):
         yield g
 
-def prep_db(Path_to_db,Ambiguous_AAs=Ambiguous_AAs,Taxid_delimiter=Taxid_delimiter):
+def prep_db(Path_to_db,
+            Ambiguous_AAs=Ambiguous_AAs,
+            Taxid_delimiter=Taxid_delimiter,
+            
+            Path_to_taxonomy=Path_to_taxonomy,
+            BacArch_only=BacArch_only,      # retain only Bacteria (and Archaea(!)) in database  
+            Equate_IL=Equate_IL,        # change I and J into L 
+            Remove_ambiguous=Remove_ambiguous,  # remove ambiguous amino acids "B","X","Z","[","(" , and J in case IL is not equated
+            No_Fragments=No_Fragments,     # remove incomplete sequences from UniprotKB contain (Fragment)/(Fragments) in header
+            No_Dump=No_Dump,         # remove dump taxa (unspecific filler names of NCBI with bloated annotations, like "uncultured" or "bacterium")
+            No_Desc=No_Desc,           # only write id(accession) to fasta header instead of description (saves space)
+            Add_decoy=Add_decoy,        # append decoy of reversed or scrambled peptides
+            Add_taxid=Add_taxid,         # add taxonomy id to header id, only write id of header, not description (smaller output files, needed for CHEW)
+            rm_prep=rm_prep, #remove database after prepping
+            rm_merge=rm_merge #remove unmerged database after merging
 
+            
+            
+            ):
 
-    Path_to_db="H:/Databases/Swiss-Prot/Swiss-Prot/uniprot_sprot.fasta"
 
     # tax database and files
     if BacArch_only or No_Dump:
-        taxdf=pd.read_csv(Path_to_taxonomy,sep="\t")
+        taxdf=pd.read_csv(Path_to_taxonomy,sep="\t",dtype=str)
 
 
     if BacArch_only:
@@ -219,7 +235,7 @@ def prep_db(Path_to_db,Ambiguous_AAs=Ambiguous_AAs,Taxid_delimiter=Taxid_delimit
                                 chunk_df["id"]=chunk_df["id"]+"|"+chunk_df["OX"]
                     
                             else:
-                                chunk_df["description"]=chunk_df["id"]+"|"+chunk_df["OX"]+chunk_df["description"].str.split(" ",1).apply(lambda x: x[2])
+                                chunk_df["description"]=chunk_df["id"]+"|"+chunk_df["OX"]+" "+chunk_df["description"].str.split(" ",1).apply(lambda x: x[-1])
                 
                 
                         if Add_decoy:
@@ -338,48 +354,6 @@ def download_extract(urls,path):
     
     download(urls,path)
     extract_subfolders(path)
-
-
-# #%% Testing
-# import numpy as np
-# from collections import Counter
-# tdf=pd.read_excel("C:/MP-CHEW/Datasets/PXD005776_MIX24/mix24names.xlsx",engine="openpyxl")
-
-# taxa=tdf["NCBI OX"].astype(str).tolist()# tdf["Mix24 species name"].tolist()+tdf["NCBI synonym"].dropna().tolist()
-# taxcounts=np.array([0]*len(taxa))
-
-# tax_dict=dict()
-# for t in taxa:
-#     tax_dict.update({t:0})
-
-
-# input_path="H:/Databases/Refseq_NR/RefSeq_merged_BacArch_NoAmb_NoDump_NoDesc_IJeqL_taxid.fa" #"H:/Databases/Refseq_NR/RefSeq_merged.fasta"
-# recs=SeqIO.parse(input_path ,format="fasta")
-# chunks=chunk_gen(recs)
-
-# #write IL datbase
-
-
-
-# for ic,c in enumerate(chunks):
-#     print("chunk "+ str(ic))
-
-#     ids=pd.Series([r.id for r in c])
-#     ts=ids.str.split("|").apply(lambda x: x[-1])
-#     counts=Counter(ts[ts.isin(taxa)])
-
-#     for k,v in counts.items():
-#         tax_dict.update({k:tax_dict.get(k)+v})
-
-                                
-                                
-
-#     #for r in c: 
-#         # for ixt,t in enumerate(taxa):
-#         #     if t in r.description:
-#         #         taxcounts[ixt]+=1
-
-
 
 #%% UniprotKB based
 

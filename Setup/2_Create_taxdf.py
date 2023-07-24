@@ -39,7 +39,7 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 
 GTDB=True
 NCBI=True
-rm=True #remove taxonomy downloads after parsing
+rm=False #remove taxonomy downloads after parsing
 
 ### update kws from parsed arguments
 parser = argparse.ArgumentParser(description="Create taxdf Input arguments",
@@ -190,7 +190,7 @@ if NCBI:
     url="https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"    
         
     path=str(Path(basedir,"taxdump"))
-    paths.appebd(path)
+    paths.append(path)
     
     download_extract(url,path)
     
@@ -305,6 +305,8 @@ if NCBI:
     
     
     ncbi_taxdf.index.name="OX"
+    ncbi_taxdf.index=ncbi_taxdf.index.astype(float).astype(int).astype(str)
+    
     namesdf.index.name="OX"
     namesdf.columns=["OS"]
     ncbi_taxdf=ncbi_taxdf.merge(namesdf,on="OX").reset_index()
