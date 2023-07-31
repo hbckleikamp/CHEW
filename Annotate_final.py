@@ -50,7 +50,7 @@ no_splits=None                                              # number of database
 no_batches=None                                             # number of file splits,     determines performance and temporary index size
 
 #Example syntax
-#Annotate_MSFragger.py -input_files "  your input folder  " -database_path " your database " -Output_directory "  your output folder   "
+#Annotate_final.py -SMSNet_fies " your smsnet files " -input_files "  your input folder  " -database_path " your database " -Output_directory "  your output folder   "
 
 
 
@@ -59,24 +59,10 @@ no_batches=None                                             # number of file spl
 ### Define keyword dictionary 
 cvars=set([str(k)+":#|%"+str(v)  for k,v in locals().copy().items() if k!="svars"])
 kws={i.split(":#|%")[0]:i.split(":#|%")[1]   for i in list(cvars-svars)}
-
-
-### update kws from parsed arguments
-parser = argparse.ArgumentParser(description="CHEW Input arguments",
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser._action_groups.pop()
-for k in kws.keys(): parser.add_argument("-"+k)
-args = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
-kws.update(args)
-
-### update kws from variable_tab 
-if variable_tab: kws.update(load_variables(variable_tab)) #uses columns: Key, Value
-if "variable_tab" in kws.keys():
-    if kws.get("variable_tab"): 
-        kws.update(load_variables(kws.get("variable_tab")))
+kws=parse_kws(cvars,svars) #use this everywhere
 
 #log keyword dictionary
-kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_Annotate_MSFragger.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
+kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_Annotate_final.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
 kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
 kws_df.columns=["Key","Value"]
 kws_df.set_index("Key").to_csv(kws_filename,sep="\t")

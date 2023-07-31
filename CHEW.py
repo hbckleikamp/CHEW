@@ -20,6 +20,8 @@ from config import *
 import warnings
 warnings.filterwarnings("ignore") #remove when debugging!
 
+import time
+start_time=time.time()
 
 from inspect import getsourcefile
 os.chdir(str(Path(os.path.abspath(getsourcefile(lambda:0))).parents[0])) # set base path
@@ -28,8 +30,7 @@ print(basedir)
 svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 
 
-import time
-start_time=time.time()
+
 
 
 #%% Define parameter dict (kws)
@@ -110,7 +111,7 @@ refine_no_splits=2            # number of database splits, determines performanc
 refine_no_batches=1           # number of file splits,     determines performance and temporary index size
 
 #Pre LCA filter
-Frequency_prefilter=2,  # 2   Static prefiler cutoff, taxa should have more PSMs 
+Frequency_prefilter=2  # 2   Static prefiler cutoff, taxa should have more PSMs 
 Precision_prefilter=0.7 # 0.7 Target Decoy precision based denoising pre LCA filter
 prefilter_remove=False  # if prefilter completly removes a scan, retain taxa?
 
@@ -132,6 +133,7 @@ final_min_ratio=0.99
 final_minimum_taxid_frequency=5
 
 #### Section 4: final annotation
+final_MSFragger=True
 final_annotation=True
 final_params=str(Path(basedir,"closed_fragger_final.params")) #detailed search for smaller db
 FDR=0.05            #false discovery rate
@@ -145,22 +147,9 @@ remove_unannotated=False
            
 ### Define keyword dictionary 
 cvars=set([str(k)+":#|%"+str(v)  for k,v in locals().copy().items() if k!="svars"])
-kws={i.split(":#|%")[0]:i.split(":#|%")[1]   for i in list(cvars-svars)}
+kws=parse_kws(cvars,svars) #use this everywhere
 
-
-### update kws from parsed arguments
-parser = argparse.ArgumentParser(description="CHEW Input arguments",
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser._action_groups.pop()
-for k in kws.keys(): parser.add_argument("-"+k)
-args = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
-kws.update(args)
-
-### update kws from variable_tab 
-if variable_tab: kws.update(load_variables(variable_tab)) #uses columns: Key, Value
-if "variable_tab" in kws.keys():
-    if kws.get("variable_tab"): 
-        kws.update(load_variables(kws.get("variable_tab")))
+print(kws)
 
 #log keyword dictionary
 kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_CHEW.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
@@ -241,6 +230,8 @@ if final_minimum_taxid_frequency:
     DB_in_mem,database_path,richness,entries=filter_Database_proteins_in_mem(input_file=DB_in_mem,proteins=proteins)
     composition,richness,entries=write_database_composition(input_file=database_path)
     taxids=composition[composition["Count"]>=final_minimum_taxid_frequency].index.tolist() 
+    
+
 
 print("final number of taxa in db: "+str(len(taxids)))
 
@@ -256,7 +247,8 @@ final_database=merge_files([final_target,final_decoy])
 
 
 #%% Final_annotation
-MSFragger=1 #Always do final annotation hybrid!
+ #Always do final annotation hybrid!
+MSFragger=final_MSFragger
 
 if final_annotation:
 

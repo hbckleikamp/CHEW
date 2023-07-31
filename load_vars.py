@@ -14,6 +14,58 @@ import pandas as pd
 from collections import Counter
 
 
+
+#%%
+
+def parse_kws(cvars,svars,script_name=""):
+    kws=dict()
+    new_vars=list(cvars-svars)
+    for i in new_vars:
+        s=i.split(":#|%")
+        k=s[0]
+        v=s[1].strip()
+        try:
+            v=eval(s[1])
+        except:
+            pass
+        kws.update({k:v})
+    
+    
+    parser = argparse.ArgumentParser(description="input arguments",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser._action_groups.pop()
+    for k in kws.keys(): parser.add_argument("-"+k)
+    args=vars(parser.parse_args())
+    
+    for k,v in args.items():
+        if v!=None:
+            v=v.strip()
+            try:
+                v=eval(v)     
+            except:
+                pass
+            kws.update({k:v})
+    
+    
+    print(kws)
+
+
+
+    #log keyword dictionary (could also be put into a function)
+    kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_"+script_name+".CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
+    
+    ds=[]
+    for k,v in kws.items():
+        ds.append(pd.DataFrame([[k,v]])).fillna("")
+    kws_df=pd.concat(ds)
+    kws_df.columns=["Key","Value"]
+    kws_df.set_index("Key").to_csv(kws_filename,sep="\t")
+    
+    
+    return kws
+
+
+
 def read_table(tabfile,*,
                Keyword=False, # "Value" or "Peptide" (Keyword is used in dynamic delimiter deetection)
                ):
@@ -96,6 +148,9 @@ def load_variables(file):
                 vs.append(eval(i))
             except:
                 vs.append(i)
+                
+    
+    
             
     return dict(zip(tab.Key, vs))
     

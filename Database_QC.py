@@ -30,11 +30,19 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 #%% Define parameter dict (kws)
 
 #required arguments
-input_files=""    # list or space delimited string of filepaths, or a folder 
+
+
+databases="" #required
+
+peplist=""        #Optional: tabular or fasta format file that will be aligned
+input_files=""    #Optional: instead of supplying a peplist, a peplist is constructed from CHEW PSMs or SMSNet files 
+
+
 
 #Optional arguments
 output_folder=""
 variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, Value
+
 
 
 #Example syntax
@@ -46,23 +54,7 @@ variable_tab=""   # Optional: supply parameters from a file, uses columns: Key, 
 ### Define keyword dictionary 
 cvars=set([str(k)+":#|%"+str(v)  for k,v in locals().copy().items() if k!="svars"])
 kws={i.split(":#|%")[0]:i.split(":#|%")[1]   for i in list(cvars-svars)}
-
-
-### update kws from parsed arguments
-parser = argparse.ArgumentParser(description="CHEW Input arguments",
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser._action_groups.pop()
-for k in kws.keys(): parser.add_argument("-"+k)
-args = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
-kws.update(args)
-
-
-
-### update kws from variable_tab 
-if variable_tab: kws.update(load_variables(variable_tab)) #uses columns: Key, Value
-if "variable_tab" in kws.keys():
-    if len(kws.get("variable_tab")): 
-        kws.update(load_variables(kws.get("variable_tab")))
+kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
 
 #log keyword dictionary
 kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_raw2mgf.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
@@ -80,7 +72,47 @@ locals().update(kws)
 #%%
 
 
+# dynamic reading of databases and input files
+#add option for mutliple database comparison
+#add function: database qc from alignment
+#input would either be databases or alignments
+
+
+
+
+if input_files="":
+    
+    
+@passed_kwargs()
+def database_QC_from_peplist(*,
+                             placeholder="",
+                             **kwargs):
+
+    check_required_args(v,["input_file","database_1","database_2"])
+
+
+def database_QC_from_CHEW_PSMs(
+                                *,
+                               scoring_metric='mass_corr_hyperscore',
+                               peplist="",
+                               **kwargs):
+    
+
+    check_required_args(v,["input_files","database_1","database_2"])
+
+    
+    
+    
+@passed_kwargs()
+def database_QC_from_SMSNet(
+                              
+
+#make 
 
 mzML_files=raw2mgf() 
+
+
+
+
 
 

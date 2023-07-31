@@ -32,15 +32,16 @@ svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 #%% Define parameter dict (kws)
 
 #required arguments
-input_files=[]    # list or space delimited string of filepaths or folder with annotations of MSFragger and SMSnet
-
+input_files=""    # list or space delimited string of filepaths or folder with annotations of MSFragger and SMSnet
+mgf_files=""      # for adding intensity and charge
+database=""       # for writing found proteins output
 
 #Which annotation should be used? (one or more should be True)
 MSFragger=True
 SMSNet=True
 
 #Example syntax:
-#Post_processing.py -input_files "  your input folder  " -MSFragger 1 -SMSNet 1
+#Post_processing.py -input_files "  your input folder  " 
 
 #output folders
 Temporary_directory=""
@@ -63,7 +64,7 @@ FDR=0.05            #false discovery rate
 min_peptide_count=1 #minimum occurrence for each unique peptide
 remove_unannotated=False 
 
-database=""
+
 
 
 
@@ -72,15 +73,7 @@ database=""
 ### Define keyword dictionary 
 cvars=set([str(k)+":#|%"+str(v)  for k,v in locals().copy().items() if k!="svars"])
 kws={i.split(":#|%")[0]:i.split(":#|%")[1]   for i in list(cvars-svars)}
-
-
-### update kws from parsed arguments
-parser = argparse.ArgumentParser(description="CHEW Input arguments",
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser._action_groups.pop()
-for k in kws.keys(): parser.add_argument("-"+k)
-args = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
-kws.update(args)
+kws=parse_kws(cvars,svars) #use this everywhere
 
 ### update kws from variable_tab 
 if variable_tab: kws.update(load_variables(variable_tab)) #uses columns: Key, Value

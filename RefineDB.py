@@ -76,7 +76,7 @@ min_rate=0.95 #break out of refinement when database richness decreases less tha
 final_denoise_ranks=["class","order","family","genus","species"]
 final_min_ratio=0.99
 final_minimum_taxid_frequency=5
-
+final_denoise_remove=True
 
 
 
@@ -86,26 +86,7 @@ final_minimum_taxid_frequency=5
 cvars=set([str(k)+":#|%"+str(v)  for k,v in locals().copy().items() if k!="svars"])
 kws={i.split(":#|%")[0]:i.split(":#|%")[1]   for i in list(cvars-svars)}
 
-
-### update kws from parsed arguments
-parser = argparse.ArgumentParser(description="CHEW Input arguments",
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser._action_groups.pop()
-for k in kws.keys(): parser.add_argument("-"+k)
-args = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
-kws.update(args)
-
-### update kws from variable_tab 
-if variable_tab: kws.update(load_variables(variable_tab)) #uses columns: Key, Value
-if "variable_tab" in kws.keys():
-    if kws.get("variable_tab"): 
-        kws.update(load_variables(kws.get("variable_tab")))
-
-#log keyword dictionary
-kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_RefineDB.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
-kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
-kws_df.columns=["Key","Value"]
-kws_df.set_index("Key").to_csv(kws_filename,sep="\t")
+kws=parse_kws(cvars,svars,script_name="RefineDB")
 
 
 from CHEW_funs import *
@@ -126,7 +107,7 @@ tlca,database_path,DB_in_mem=refine_database(input_files=input_files,
 
 kws.update({"output_folder":"refine_final"})
 
-proteins,taxids=denoise_nodes(tlca,min_ratio=final_min_ratio,denoise_ranks=final_denoise_ranks,remove=True)
+proteins,taxids=denoise_nodes(tlca,min_ratio=final_min_ratio,denoise_ranks=final_denoise_ranks,remove=final_denoise_remove)
 
 if final_minimum_taxid_frequency:
     DB_in_mem,database_path,richness,entries=filter_Database_proteins_in_mem(input_file=DB_in_mem,proteins=proteins)
@@ -134,9 +115,8 @@ if final_minimum_taxid_frequency:
     taxids=composition[composition["Count"]>=final_minimum_taxid_frequency].index.tolist() 
 
 #write results
-pd.DatFrame(taxids,columns=["Taxids"]).to_csv(database_path.replace(".fa","_taxids.tsv"),sep="\t")
-pd.DatFrame(proteins,columns=["Proteins"]).to_csv(database_path.replace(".fa","_proteins.tsv"),sep="\t")
+pd.DataFrame(taxids,columns=["Taxids"]).to_csv(database_path.replace(".fa","_taxids.tsv"),sep="\t")
+pd.DataFrame(proteins,columns=["Proteins"]).to_csv(database_path.replace(".fa","_proteins.tsv"),sep="\t")
 
 print("final number of taxa in db: "+str(len(taxids)))
-
 

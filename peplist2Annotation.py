@@ -16,6 +16,8 @@ except:
 
 from load_vars import *
 
+import time
+start_time=time.time()
 
 import warnings
 warnings.filterwarnings("ignore") #remove when debugging!
@@ -28,8 +30,7 @@ print(basedir)
 svars=set([str(k)+":#|%"+str(v) for k,v in locals().copy().items()])
 
 
-import time
-start_time=time.time()
+
 
 
 
@@ -127,11 +128,14 @@ final_minimum_taxid_frequency=5
 final_denoise_remove=True
 
 #### Section 4: final annotation
+final_MSFragger=True
 mgf_files=""
 database=""
 FDR=0.05            #false discovery rate
 min_peptide_count=1 #minimum occurrence for each unique peptide
 remove_unannotated=False 
+
+#%%
 
 
 
@@ -140,22 +144,10 @@ remove_unannotated=False
 ### Define keyword dictionary 
 cvars=set([str(k)+":#|%"+str(v)  for k,v in locals().copy().items() if k!="svars"])
 kws={i.split(":#|%")[0]:i.split(":#|%")[1]   for i in list(cvars-svars)}
+kws=parse_kws(cvars,svars) #use this everywhere
 
-
-### update kws from parsed arguments
-parser = argparse.ArgumentParser(description="CHEW Input arguments",
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser._action_groups.pop()
-for k in kws.keys(): parser.add_argument("-"+k)
-args = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
-kws.update(args)
-
-### update kws from variable_tab 
-if variable_tab: kws.update(load_variables(variable_tab)) #uses columns: Key, Value
-if "variable_tab" in kws.keys():
-    if kws.get("variable_tab"): 
-        kws.update(load_variables(kws.get("variable_tab")))
-
+print(kws)
+print()
 #log keyword dictionary
 kws_filename=datetime.now().strftime("%y_%m_%d_%H_%M_%S")+"_peplist2Annotation.CHEW_params" #the basename needs to be changed manually per script, since inspect only works form CLI
 kws_df=pd.DataFrame.from_dict(kws,orient="index").fillna("").reset_index()
@@ -170,7 +162,6 @@ locals().update(kws)
 taxdf=read_table(taxdf_path,Keyword="OX").set_index("OX")
 taxdf.index=taxdf.index.astype(str)
 kws.update({"taxdf":taxdf}) 
-
 
 
 #%% parse input files
@@ -257,7 +248,7 @@ final_database=merge_files([final_target,final_decoy])
 
 #%% Final_annotation
 
-MSFragger=1 #Always do final annotation hybrid!
+MSFragger=final_MSFragger #Always do final annotation hybrid!
 
 final_annotations=[]
 
