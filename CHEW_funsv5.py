@@ -894,9 +894,9 @@ def add_proteins_SMSNet(*,
         final_database_dmnd=make_diamond_database(input_file=database_path) #this is a diamond databse with decoy proteins
         Alignment=Diamond_alignment(input_file=SMSNet_peplist,
                                     database_path=final_database_dmnd,
-                                    # minimum_pident=0, 
-                                    # minimum_coverage=0,
-                                    # minimum_bitscore=0,
+                                    minimum_pident=0, 
+                                    minimum_coverage=0,
+                                    minimum_bitscore=0,
                                     other_args=" --algo ctg --masking 0 --dbsize 1 ",
                                     #other_args=" --gapopen 5 --gapextend 30 --algo ctg --masking 0 --dbsize 1 --custom-matrix "+'"'+custom_matrix_path+'"',
                                     diamond_output_columns=["qseqid","sseqid","pident","bitscore","sseq"])
@@ -1413,20 +1413,7 @@ def refine_database(*,
     taxdf=v.taxdf
 
 
-    if type(input_files)==str:
-        if os.path.isdir(input_files):
-            fs=[str(Path(input_files,i)) for i in os.listdir(input_files)]
-            
-            mzml=[i for i in fs if i.endswith(".mzML")]
-            if len(mzml):
-                input_files=mzml
-            else: 
-                input_files=raw2mzML(fs)
-            
-        else: input_files=input_files.split()
-
-    
-    
+    input_files=raw2mzML(input_files=input_files)     #make raw to mzml if supplied files are raw
 
     DB_in_mem=load_full_db(database_path)
     composition,richness,entries=write_database_composition(input_file=database_path)
@@ -1434,7 +1421,6 @@ def refine_database(*,
     #variable name backup since cycle overwrites utarget,entries
     Initial_Database,Initial_entries=database_path,entries
     
-    print("writing decoy database")
     decoy=write_decoy(input_file=Initial_Database,output_folder=output_folder)
     database_path=merge_files([Initial_Database,decoy])
 
@@ -1454,9 +1440,6 @@ def refine_database(*,
                                             params_path=params_path, 
                                             no_splits=no_splits,
                                             no_batches=no_batches)
-        
-        
-        print(MSFragger_files) #debug
         
         prots=[]
         for ix,f in enumerate(MSFragger_files):
@@ -1488,9 +1471,6 @@ def refine_database(*,
         #filter proteins based on frequency and precision of their taxonomy
         g=prots.groupby([weight_rank,"Decoy"]).size()
         p=g.rename("Count").reset_index().pivot(index="species",columns="Decoy",values="Count").fillna(0)
-        
-        print(p.columns)
-        
         p.columns=["decoy" if i else "target" for i in p.columns]
         p["precision"]=p["target"]/(p["target"]+p["decoy"])
         p.to_csv(str(Path(folder_name,"precision.tsv")),sep="\t")
@@ -1700,11 +1680,6 @@ def Post_processing(*,
             
         
         if len(mgf_info): pepdfs=pepdfs.merge(mgf_info,on="ScanNr",how="left")
-        c=pepdfs.columns
-        
-        if "intensity" in c:
-            pepdfs["intensity"]=pd.to_numeric(pepdfs["intensity"],errors='coerce').fillna(0) #fillna("0").astype(str).str.replace("","0").astype(float)
-        
         
         for i in ["ExpMass","hyperscore","evalue"]:
             if i in c:
@@ -1895,12 +1870,11 @@ def Post_processing(*,
 
 
 def compare_dbs(input_file, #aligned fasta
-                db1,  #diamond database 1
-                db2): #diamond database 2
+                dbs): #diamond database 2
     
     
     
-    dbs=[db1,db2]
+
     results=[]
     
     for db_ix,db in enumerate(dbs):
@@ -1925,7 +1899,10 @@ def compare_dbs(input_file, #aligned fasta
         rs.append(x.set_index(["Peptide","Alignment_Decoy"]))
     
     rs=pd.concat(rs,axis=1)
-    rs.columns=["db1_score","db1_count","db1_proteins","db2_score","db2_count","db2_proteins"]
+    
+    base_cols=["main"]+list(range(2,len(dbs)+1))
+    cols=sum([["db"+str(i)+"_score","db"+str(i)+"_count","db"+str(i)+"_proteins"] for i in base_cols],[])
+    rs.columns=cols
     rs=rs.reset_index()
 
     return rs 
@@ -1937,12 +1914,16 @@ def database_qc_per_score(pepdf,rs,scoring_metric,bins=10):
     
     pepdf["quantile"]=pd.cut(pepdf[scoring_metric],bins)
 
+  
+
     qdf=[]
     for n,g in pepdf.groupby("quantile"):
         
         c=pepdf[pepdf[scoring_metric]>n.left]
     
         cf=rs[rs.Peptide.isin(c.Peptide)]
+        cf.columns=["Peptide","Alignment_Decoy","db1_score","db1_count","db2_score","db2_count"]
+        
         dc=cf[cf["Alignment_Decoy"]]
         tc=cf[~cf["Alignment_Decoy"]]
         completeness=tc.db2_score.sum()/tc.db1_score.sum()
@@ -1984,6 +1965,7 @@ def database_QC_from_CHEW_PSMs(
                                 *,
                                scoring_metric='mass_corr_hyperscore',
                                peplist="",
+                               main_db="" #core database to compare to
                                **kwargs):
     
     
@@ -1993,23 +1975,31 @@ def database_QC_from_CHEW_PSMs(
     
     #required arguments
     input_files=v.input_files 
-    check_required_args(v,["input_files","database_1","database_2"])
+    check_required_args(v,["input_files","databases"])
     
     input_files=v.input_files
-    db1=v.database_1
-    db2=v.database_2
+    dbs=v.databases
+    
     scoring_metric=v.scoring_metric
     peplist=v.peplist
     
     #default arguments
     output_folder,tmp_folder=v.output_folder,v.tmp_folder
+
+    #parse database info
+    if type(dbs)==str:
+        if os.path.isdir(dbs):
+            dbs=[str(Path(dbs,i)) for i in os.listdir(dbs) if is_fasta(i)]
+        else: dbs=dbs.split()
+    if not len(main_db):
+        main_db=dbs[0]
     
     
     if len(peplist) and os.path.exists(peplist):
         peplist=parse_peplist(peplist,add_decoy=True)        
     else:            
         peplist=write_to_Diamond_fasta(input_files,add_decoy=True)
-    rs=compare_dbs(peplist,db1,db2)
+    rs=compare_dbs(peplist,dbs)
     
     #CHEW PSMs specific files 
     if type(input_files)==str:
@@ -2298,14 +2288,14 @@ def weighted_lca(df,*, #dataframe with at least a column called Peptide, and ran
     lin=pd.concat(lin,axis=1)
     lcas=pd.DataFrame(df[group_on]).drop_duplicates().merge(lin,on=group_on).set_index(group_on)
     last=lcas.fillna(method="ffill",axis=1).iloc[:,-1]
-    lcas["Proteins"]=df[df[ranks].add(df[group_on],axis=0).isin(last.tolist()+last.index).any(axis=1)].groupby(group_on)[protein_column].apply(lambda x: ", ".join(list(set(x))))
+    lcas["proteins"]=df[df[ranks].add(df[group_on],axis=0).isin(last.tolist()+last.index).any(axis=1)].groupby(group_on)[protein_column].apply(lambda x: ", ".join(list(set(x))))
     
     #add back proteins with no common ancestor concensus
     no_lca=df[~df[group_on].isin(lcas.index)]
     no_lca=pd.DataFrame(no_lca.groupby(group_on)[protein_column].apply(lambda x: ", ".join(x)))
     
     
-    no_lca.columns=["Proteins"]
+    no_lca.columns=["proteins"]
     no_lca[ranks.tolist()]=[""]*len(ranks)
     lcas=pd.concat([lcas,no_lca],axis=0)
 
@@ -2313,57 +2303,6 @@ def weighted_lca(df,*, #dataframe with at least a column called Peptide, and ran
     
     return lcas.fillna("")
 
-#alternative implementation of Local denoise.
-def denoise_nodes_edf(edf, #takes an already exploded df (has no "remove" option)
-                  min_count=2,
-                  min_ratio=0.99, 
-                  denoise_ranks=["phylum","class","order","family","genus","species"]):
-
-    if type(min_ratio)!=list: min_ratio=[min_ratio]
-    if len(min_ratio)<len(denoise_ranks):
-        min_ratio+=[max(min_ratio)]*(len(denoise_ranks)-len(min_ratio)) #pad max
-        
-    if "OX" not in edf.columns: edf["OX"]=edf["Proteins"].str.split("|").apply(lambda x: x[-1])
-    if "u_ix" not in edf.columns: edf["u_ix"]=edf.index
-    
-    for ir,r in enumerate(denoise_ranks[::-1]): #reverse order from specific to unspecific
-        # print("denoising: "+r)
-        taxids=[]
-        
-        for n,tu in edf.groupby(r):
-            if len(tu)<min_count or n=="":
-                continue
-            
-            if tu["OX"].nunique()==1:
-                taxids.extend([tu["OX"].iloc[0]]) 
-            else:
-                g=pd.DataFrame(tu.groupby("OX")["u_ix"].apply(set))
-                g["l"]=g["u_ix"].apply(len)
-                g=g.sort_values(by="l",ascending=False)
-                
-                u=set()
-                ls=[0]
-                s=0
-                for ix,i in enumerate(g["u_ix"]): 
-                    u.update(i)
-                    l=len(u)
-                    ls.append(l)
-                    d=ls[-1]-ls[-2]
-                    
-                    if d<min_count: #absolute  
-                        break
-                    s+=l
-                    if 1-(d/s)>min_ratio[ir]: #relative
-                        break
-    
-                taxids.extend(g.index[:ix].tolist()) 
-        edf=edf[edf["OX"].isin(taxids)]    
-        proteins=edf["Proteins"]
-        
-
-    taxids=proteins.str.split("|").apply(lambda x: x[-1])
-
-    return list(set(proteins)), list(set(taxids))
 
 def denoise_nodes(df, #lca df 
                   min_count=2,
@@ -2376,9 +2315,9 @@ def denoise_nodes(df, #lca df
         min_ratio+=[max(min_ratio)]*(len(denoise_ranks)-len(min_ratio)) #pad max
     
     df=df.copy()
-    df["Proteins"]=df["Proteins"].str.split(", ")
-    edf=df.explode("Proteins").reset_index()
-    edf["OX"]=edf["Proteins"].str.split("|").apply(lambda x: x[-1])
+    df["proteins"]=df["proteins"].str.split(", ")
+    edf=df.explode("proteins").reset_index()
+    edf["OX"]=edf["proteins"].str.split("|").apply(lambda x: x[-1])
     dfs=[df]
     
     for ir,r in enumerate(denoise_ranks[::-1]): #reverse order from specific to unspecific
@@ -2413,17 +2352,17 @@ def denoise_nodes(df, #lca df
     
                 taxids.extend(g.index[:ix].tolist()) 
         edf=edf[edf["OX"].isin(taxids)]
-        dfs.append(edf.groupby("u_ix")["Proteins"].apply(list).rename("Proteins"+str(ir)))
+        dfs.append(edf.groupby("u_ix")["proteins"].apply(list).rename("proteins"+str(ir)))
         #print(edf["u_ix"].nunique())
     
     if remove:
-        proteins=edf["Proteins"]
+        proteins=edf["proteins"]
         
     else:
         cdf=pd.concat(dfs,axis=1)
-        protcols=[i for i in cdf.columns if i.startswith("Proteins")]
-        df["Proteins"]=cdf[protcols].ffill(axis=1)[protcols[-1]] #if keep
-        proteins=df.explode("Proteins")["Proteins"]
+        protcols=[i for i in cdf.columns if i.startswith("proteins")]
+        df["proteins"]=cdf[protcols].ffill(axis=1)[protcols[-1]] #if keep
+        proteins=df.explode("proteins")["proteins"]
     
     
     taxids=proteins.str.split("|").apply(lambda x: x[-1])

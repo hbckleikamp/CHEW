@@ -40,7 +40,7 @@ import matplotlib.pyplot as plt
 
 #local module
 from load_vars import *
-
+from config import *
 #### function variables ###
 
 from inspect import getsourcefile
@@ -49,11 +49,19 @@ basedir=os.getcwd()
 
 
 
-#%% basic params (see config)
-
-from config import *
+#%% basic params
 
 
+#SMSNet filepaths
+simple_masks=pd.read_csv(str(Path(basedir,"simple_unmasks.tsv")),sep="\t")
+
+#Base taxonomy filepaths
+ranks=np.array(["superkingdom","phylum","class","order","family","genus","species"]) 
+taxdf_path=str(Path(basedir,"Setup","parsed_taxonomy.tsv"))
+
+
+IO_batch=10**6 #how much lines should be written or read at once from a fasta file 
+diamond_output_columns=["qseqid","sseqid","stitle","bitscore","full_sseq"]
 
 
 
@@ -487,7 +495,7 @@ def write_to_Diamond_fasta(*,
                            
                            #fasta writing parameters
                            header_info=["Target_Decoy"],         #information columns that should be retained in the fasta header
-                           add_decoy=False,         #decoy alignment for database QC
+                           add_decoy=True,         #decoy alignment for database QC
                            unique_peptides=True,   #only write unique combinations of header and peptide
                            min_length=5,           #minimum tag length
                            output_file="peplist.fa",  #output_file name
@@ -563,7 +571,7 @@ def write_to_Diamond_fasta(*,
         if add_decoy: #in this pipeline this is only used for database QC
             pepdf["Alignment_Decoy"]=False
             decoy=pepdf.copy()
-            decoy["tag"]=decoy["tag"].str[::-1] #reverse
+            decoy["tag"]=decoy.str[::-1] #reverse
             decoy["Alignment_Decoy"]=True
             pepdf=pd.concat([pepdf,decoy])
             
@@ -591,7 +599,6 @@ def write_to_Diamond_fasta(*,
             f.write("\n".join(">"+pepdf["tag"]+";"+pepdf["dict"]+"\n"+pepdf["tag"])+"\n")
 
     return out_path
-
 
 #function to parse tabular Peptide files
 @passed_kwargs()
@@ -622,7 +629,7 @@ def parse_peplist(*,
 
     if isinstance(input_file, pd.DataFrame):
         pepdf=input_file
-    elif isinstance(input_file,pd.Series):
+    elif isinstance(input_fle,pd.Series):
         pepdf=input_file.reset_index()
 
     elif  is_fasta(input_file): #do nothing
@@ -681,7 +688,6 @@ def parse_peplist(*,
         f.write("\n".join(">"+pepdf["Peptide"]+";"+pepdf["dict"]+"\n"+pepdf["Peptide"])+"\n")
 
     return out_path
-    
     
 @passed_kwargs()    
 def BlastP_alignment(*,
@@ -765,7 +771,7 @@ def Diamond_alignment(*,
             " --min-score "+   str(minimum_bitscore),
             " --query-cover  "+str(minimum_coverage),
             " -f 6  qseqid "+" ".join(diamond_output_columns)+" ", #add qseqid?
-            " -t "+'"'+tmp_folder+'" '+other_args])
+            " -t "+'"'+tmp_folder+'"'+other_args])
     
     print(command)
     
@@ -894,9 +900,9 @@ def add_proteins_SMSNet(*,
         final_database_dmnd=make_diamond_database(input_file=database_path) #this is a diamond databse with decoy proteins
         Alignment=Diamond_alignment(input_file=SMSNet_peplist,
                                     database_path=final_database_dmnd,
-                                    # minimum_pident=0, 
-                                    # minimum_coverage=0,
-                                    # minimum_bitscore=0,
+                                    minimum_pident=0, 
+                                    minimum_coverage=0,
+                                    minimum_bitscore=0,
                                     other_args=" --algo ctg --masking 0 --dbsize 1 ",
                                     #other_args=" --gapopen 5 --gapextend 30 --algo ctg --masking 0 --dbsize 1 --custom-matrix "+'"'+custom_matrix_path+'"',
                                     diamond_output_columns=["qseqid","sseqid","pident","bitscore","sseq"])
@@ -1413,20 +1419,7 @@ def refine_database(*,
     taxdf=v.taxdf
 
 
-    if type(input_files)==str:
-        if os.path.isdir(input_files):
-            fs=[str(Path(input_files,i)) for i in os.listdir(input_files)]
-            
-            mzml=[i for i in fs if i.endswith(".mzML")]
-            if len(mzml):
-                input_files=mzml
-            else: 
-                input_files=raw2mzML(fs)
-            
-        else: input_files=input_files.split()
-
-    
-    
+    input_files=raw2mzML(input_files=input_files)     #make raw to mzml if supplied files are raw
 
     DB_in_mem=load_full_db(database_path)
     composition,richness,entries=write_database_composition(input_file=database_path)
@@ -1434,7 +1427,6 @@ def refine_database(*,
     #variable name backup since cycle overwrites utarget,entries
     Initial_Database,Initial_entries=database_path,entries
     
-    print("writing decoy database")
     decoy=write_decoy(input_file=Initial_Database,output_folder=output_folder)
     database_path=merge_files([Initial_Database,decoy])
 
@@ -1454,9 +1446,6 @@ def refine_database(*,
                                             params_path=params_path, 
                                             no_splits=no_splits,
                                             no_batches=no_batches)
-        
-        
-        print(MSFragger_files) #debug
         
         prots=[]
         for ix,f in enumerate(MSFragger_files):
@@ -1488,9 +1477,6 @@ def refine_database(*,
         #filter proteins based on frequency and precision of their taxonomy
         g=prots.groupby([weight_rank,"Decoy"]).size()
         p=g.rename("Count").reset_index().pivot(index="species",columns="Decoy",values="Count").fillna(0)
-        
-        print(p.columns)
-        
         p.columns=["decoy" if i else "target" for i in p.columns]
         p["precision"]=p["target"]/(p["target"]+p["decoy"])
         p.to_csv(str(Path(folder_name,"precision.tsv")),sep="\t")
@@ -1613,7 +1599,7 @@ def Post_processing(*,
           'ScanNr','ExpMass','hyperscore',
           'log10_evalue',"Prediction","mean_score",
           "SMSNet_score", "evalue",'MassError(ppm)',
-          "No_Proteins","pident","coverage","tag"] #retained columns
+          "No_Proteins","pident","coverage"] #retained columns
           
     #outputs
     found_proteins=set()
@@ -1667,7 +1653,6 @@ def Post_processing(*,
                 if "Proteins" in c: pepdf["Proteins"]=pepdf["Proteins"].str.replace("\t"," ",regex=True) #shouldnt Proteins alsways be a column?
                 if "No_Proteins" not in c and "Proteins" in c : pepdf["No_Proteins"]=1+pepdf["Proteins"].str.strip().str.count(" ") 
 
-                if "tag" not in c: pepdf["tag"]=pepdf["Peptide"]
                 if "tag" in c: pepdf["Peptide"]=pepdf["tag"].str.replace("I","L").str.replace("J","L") #remove ptms in peptides
                 if "Scores" in c: pepdf["SMSNet_score"]=pepdf["Scores"].str.rsplit(";",expand=True).astype(float).sum(axis=1)
                 if "ScanNum" in c: pepdf["ScanNr"]=pepdf["ScanNum"]
@@ -1700,11 +1685,6 @@ def Post_processing(*,
             
         
         if len(mgf_info): pepdfs=pepdfs.merge(mgf_info,on="ScanNr",how="left")
-        c=pepdfs.columns
-        
-        if "intensity" in c:
-            pepdfs["intensity"]=pd.to_numeric(pepdfs["intensity"],errors='coerce').fillna(0) #fillna("0").astype(str).str.replace("","0").astype(float)
-        
         
         for i in ["ExpMass","hyperscore","evalue"]:
             if i in c:
@@ -1889,9 +1869,7 @@ def Post_processing(*,
     if len(database):
         print("writing found proteins")
         filter_Database_proteins(input_file=database,proteins=found_proteins,output_file="found_proteins.fa")
-        
- 
-#%% DB QC
+
 
 
 def compare_dbs(input_file, #aligned fasta
@@ -1921,11 +1899,10 @@ def compare_dbs(input_file, #aligned fasta
         i=i.sort_values(by=["Peptide","Alignment_Decoy","bitscore"],ascending=False)
         x=i.groupby(["Peptide","Alignment_Decoy"],sort=False)["bitscore"].nth(0).reset_index()
         x["count"]=i.groupby(["Peptide","Alignment_Decoy"],sort=False).size().values
-        x["Proteins"]=i.groupby(["Peptide","Alignment_Decoy"],sort=False)["sseqid"].apply(" ".join).values
         rs.append(x.set_index(["Peptide","Alignment_Decoy"]))
     
     rs=pd.concat(rs,axis=1)
-    rs.columns=["db1_score","db1_count","db1_proteins","db2_score","db2_count","db2_proteins"]
+    rs.columns=["db1_score","db1_count","db2_score","db2_count"]
     rs=rs.reset_index()
 
     return rs 
@@ -1933,7 +1910,7 @@ def compare_dbs(input_file, #aligned fasta
 
 
        
-def database_qc_per_score(pepdf,rs,scoring_metric,bins=10):
+def database_qc_per_score(pepdf,scoring_metric,bins=10):
     
     pepdf["quantile"]=pd.cut(pepdf[scoring_metric],bins)
 
@@ -1970,12 +1947,10 @@ def database_QC_from_peplist(*,
 
     output_folder,tmp_folder=v.output_folder,v.tmp_folder
 
-    peplist=parse_peplist(input_file,add_decoy=True)
+    peplist=parse_peplist(input_file)
     rs=compare_dbs(peplist,db1,db2)
     
-    rs.columns=["Peptide","Alignment_Decoy",
-                Path(db1).stem+"_bitscore",Path(db1).stem+"_count",Path(db1).stem+"_proteins",
-                Path(db2).stem+"_bitscore",Path(db2).stem+"_count",Path(db1).stem+"_proteins"]
+    rs.columns=["Peptide","Alignment_Decoy",Path(db1).stem+"_bitscore",Path(db1).stem+"_count",Path(db2).stem+"_score",Path(db2).stem+"_count"]
     
     rs.to_csv(str(Path(output_folder,"database_comparison_peptides.tsv")),sep="\t")
     
@@ -2006,9 +1981,9 @@ def database_QC_from_CHEW_PSMs(
     
     
     if len(peplist) and os.path.exists(peplist):
-        peplist=parse_peplist(peplist,add_decoy=True)        
+        peplist=parse_peplist(peplist)        
     else:            
-        peplist=write_to_Diamond_fasta(input_files,add_decoy=True)
+        peplist=write_to_Diamond_fasta(input_files)
     rs=compare_dbs(peplist,db1,db2)
     
     #CHEW PSMs specific files 
@@ -2022,11 +1997,9 @@ def database_QC_from_CHEW_PSMs(
         
         pepdf=pd.read_csv(input_file,sep="\t")
         if "Peptide" not in pepdf.columns and "tag" in pepdf.columns: pepdf["Peptide"]=pepdf["tag"]
-        qdf=database_qc_per_score(pepdf,rs,scoring_metric=scoring_metric)
+        qdf=database_qc_per_score(pepdf,scoring_metric=scoring_metric)
     
-    rs.columns=["Peptide","Alignment_Decoy",
-                Path(db1).stem+"_bitscore",Path(db1).stem+"_count",Path(db1).stem+"_proteins",
-                Path(db2).stem+"_bitscore",Path(db2).stem+"_count",Path(db1).stem+"_proteins"]
+    rs.columns=["Peptide","Alignment_Decoy",Path(db1).stem+"_bitscore",Path(db1).stem+"_count",Path(db2).stem+"_score",Path(db2).stem+"_count"]
     
     rs.to_csv(str(Path(output_folder,"database_comparison_peptides.tsv")),sep="\t")
     qdf.to_csv(str(Path(output_folder,"database_comparison_per_score.tsv")),sep="\t")
@@ -2038,10 +2011,6 @@ def database_QC_from_CHEW_PSMs(
 def database_QC_from_SMSNet(
                                 *,
                                peplist="",
-                               simple_unmask=True,
-                               X_padding=False,
-                               SMSNet_ppm=False,
-                               SMSNet_minscore=False,
                                **kwargs):
     
     v=database_QC_from_SMSNet.vars #parse function arguments
@@ -2057,19 +2026,15 @@ def database_QC_from_SMSNet(
     db2=v.database_2
 
     peplist=v.peplist
-    simple_unmask=v.simple_unmask
-    X_padding=v.X_padding
-    SMSNet_ppm=v.SMSNet_ppm
-    SMSNet_minscore=v.SMSNet_minscore
     
     #default arguments
     output_folder,tmp_folder=v.output_folder,v.tmp_folder
     
     
     if len(peplist) and os.path.exists(peplist):
-        peplist=parse_peplist(peplist,add_decoy=True)        
+        peplist=parse_peplist(peplist)        
     else:            
-        peplist=write_to_Diamond_fasta(input_files,add_decoy=True)
+        peplist=write_to_Diamond_fasta(input_files)
     rs=compare_dbs(peplist,db1,db2)
     
     #CHEW PSMs specific files 
@@ -2081,11 +2046,11 @@ def database_QC_from_SMSNet(
 
     for input_file in input_files:
         
-        pepdf=parse_SMSNet_output(input_file,simple_unmask=simple_unmask,X_padding=X_padding,SMSNet_ppm=SMSNet_ppm,SMSNet_minscore=SMSNet_minscore)
+        pepdf=parse_SMSNet_output(t,simple_unmask=True,X_padding=False,SMSNet_ppm=False,SMSNet_minscore=False)
         pepdf["mean_score"]=pepdf.Scores.str.rsplit(";",expand=True).fillna(0).astype(float).mean(axis=1)
         if "Peptide" not in pepdf.columns and "tag" in pepdf.columns: pepdf["Peptide"]=pepdf["tag"]
         
-        qdf=database_qc_per_score(pepdf,rs,scoring_metric="mean_score")
+        qdf=database_qc_per_score(pepdf,scoring_metric="mean_score")
     
     rs.columns=["Peptide","Alignment_Decoy",Path(db1).stem+"_bitscore",Path(db1).stem+"_count",Path(db2).stem+"_score",Path(db2).stem+"_count"]
 
@@ -2093,15 +2058,265 @@ def database_QC_from_SMSNet(
     qdf.to_csv(str(Path(output_folder,"database_comparison_per_score.tsv")),sep="\t")
     
     
+    #%%
+    
+    t="C:/MP_CHEW/CHEW/S56dn/peplist/S05_SMSNET.tsv"
+    r=parse_SMSNet_output(t,simple_unmask=True,X_padding=False,SMSNet_ppm=False,SMSNet_minscore=False)
+    
+    #%%
+    
+#%%
+@passed_kwargs()
+def database_QC(initial_alignment="", #optional
+                final_alignment="",   #optional
+                
+                initial_peplist="",   #required
+                final_peplsit="" ,    #required
+                
+                initial_database="",  #required
+                final_database="",    #required
+                
+                SMSnet_files=""       #required 
+                ):
+    
+    
+    v=database_QC.vars #parse function arguments
+    
+    #required arguments
+    input_files=v.input_files 
+    check_required_args(v,["initial_peplist",
+                           "final_peplist",
+                           "initial_database",
+                           "final_database",
+                           "SMSNet_files"])
+    
+    #default arguments
+    output_folder,tmp_folder=v.output_folder,v.tmp_folder
+    
+
+
+#%%  Test
+
+    initial_alignment="" #C:/MP_CHEW/CHEW/SwissProt_Mix24dn/peplist/peplist.tsv"
+    final_alignment=""  #"C:/MP_CHEW/CHEW/SwissProt_Mix24dn/final/peplist.tsv"
+    
+    output_folder="C:/MP_CHEW/CHEW/db_comp/dbqc_test"
+    kws.update(output_folder=output_folder)
+    peplist="C:/MP_CHEW/CHEW/Mix24dn/peplist/peplist.fa"
+    initial_database="H:/Databases/Swiss-Prot/Swiss-Prot/uniprot_sprot_BacArch_NoAmb_NoDump_NoDesc_IJeqL_taxid.dmnd"
+    final_database="C:/MP_CHEW/CHEW/SwissProt_Mix24dn/final/ft_target.fa"
+    
+    initial_database="H:/Databases/UniprotKB/UniprotKB_BacArch_NoAmb_NoDump_IJeqL_taxid.dmnd"
+    final_database="C:/MP_CHEW/CHEW/UniprotKB_Mix24dn/final/ft_target.fa"
+    
+    SMSNet_files=["C:/MP_CHEW/CHEW/Mix24/Initial_annotation/Q20518_Mix24X_SMSNET.tsv",
+"C:/MP_CHEW/CHEW/Mix24/Initial_annotation/Q20516_Mix24X_SMSNET.tsv",
+"C:/MP_CHEW/CHEW/Mix24/Initial_annotation/Q20517_Mix24X_160629055637_SMSNET.tsv"]
+
+    initial_database,final_database=[  make_diamond_database(input_file=i )  if not i.endswith(".dmnd") else i.replace(".dmnd","") for i in [initial_database, final_database]    ] #check if databases are diamond databases
+    # if len(peplist):
+    # elif:
+    # else:
+    #     "I"+1
+        
+    
+    
+    ### check if initial  alignment has been done with or without decoy (or not)
+    
+    initial_al=pd.DataFrame() #placeholder
+    if len(initial_alignment):
+
+        #read initial alignment
+        al=Diamond_alignment_Reader(initial_alignment,diamond_output_columns=diamond_output_columns)
+        al["dict"]=al.qseqid.str.split(";").apply(lambda x: x[1]).str.strip("{}") #strip does not have regex
+        al[al["dict"].iloc[0,:].str.split(":").apply(lambda x: x[0::2]).tolist()]=al["dict"].str.split(":").apply(lambda x: x[1::2]) #clumsy dictionary eval
+        initial_al=al.copy()
+
+
+    #read inital peplist (required argument)
+    if not is_fasta(peplist): peplist=parse_peplist(peplist)  
+    pepdf=pd.DataFrame([[r.description,str(r.seq)] for r in SeqIO.parse(peplist,"fasta")],columns=["description","seq"])
+    
+    if "Target_Decoy" not in initial_al.columns:
+        
+        #write decoy sequences and align 
+        if not pepdf.description.str.contains(":Decoy}").sum():
+           
+            d=pepdf.copy()
+            if pepdf.description.str.endswith("}").sum(): #they have a dict   
+               pepdf.description=pepdf.description.str.replace("}",",Target_Decoy:Target}",regex=False).str.replace("{,","{",regex=False)
+               d.description=d.seq.str[::-1]+";"+d.description.str.split(";").apply(lambda x: x[-1]).str.replace("}",",Target_Decoy:Decoy}",regex=False).str.replace("{,","{",regex=False)
+            else:
+               pepdf.description=pepdf.description+";{Target_Decoy:Target}"    
+               d.description=d.seq.str[::-1]+";{Target_Decoy:Decoy}"  
+            d.seq=d.seq.str[::-1]
+        
+            if len(initial_al):
+                peplist=str(Path(output_folder,"decoy_peplist.fa"))
+                pepdf=d.copy()
+            else:
+                peplist=str(Path(output_folder,"target_decoy_peplist.fa"))
+                pepdf=pd.concat([pepdf,d])
+            
+            with open(peplist,"w") as f:
+                f.write("\n".join(">"+pepdf.description+"\n"+pepdf.seq)+"\n")
+            
+                
+        Alignment=Diamond_alignment(input_file=peplist,database_path=initial_database, other_args=" --algo ctg --dbsize 1 ")
+        al=pd.concat([i for i in Diamond_alignment_Reader(Alignment)])
+        initial_al=pd.concat([initial_al,al])
+        
+    
+    ### check if final alignment has been done with or without decoy (or not)
+    
+    final_al=pd.DataFrame() #placeholder
+    if len(final_alignment):
+
+        #read final alignment
+        al=Diamond_alignment_Reader(final_alignment,diamond_output_columns=diamond_output_columns)
+        al["dict"]=al.qseqid.str.split(";").apply(lambda x: x[1]).str.strip("{}") #strip does not have regex
+        al[al["dict"].iloc[0,:].str.split(":").apply(lambda x: x[0::2]).tolist()]=al["dict"].str.split(":").apply(lambda x: x[1::2]) #clumsy dictionary eval
+        final_al=al.copy()
+    
+    if "Target_Decoy" not in final_al.columns:
+    
+        Alignment=Diamond_alignment(input_file=peplist,database_path=final_database)
+        al=pd.concat([i for i in Diamond_alignment_Reader(Alignment)])
+        final_al=pd.concat([final_al,al])
+    
+    
+    
+    #%%
+    rs=[]
+    for i in initial_al, final_al:
+        i["Alignment_Decoy"]=i.qseqid.str.contains(":Decoy")
+        i=i[["tag","sseqid","bitscore","Alignment_Decoy"]].drop_duplicates()
+        i.loc[i["Alignment_Decoy"],"tag"]=i.loc[i["Alignment_Decoy"],"tag"].str[::-1]
+        i=i.sort_values(by=["tag","Alignment_Decoy","bitscore"],ascending=False)
+        r=i.groupby(["tag","Alignment_Decoy"],sort=False)["bitscore"].nth(0).reset_index()
+        r["count"]=i.groupby(["tag","Alignment_Decoy"],sort=False).size().values
+        rs.append(r.set_index(["tag","Alignment_Decoy"]))
+    
+    rs=pd.concat(rs,axis=1)
+    rs.columns=["initial_score","initial_count","final_score","final_count"]
+    rs=rs.reset_index()
+    #%%
+    # fig,ax=plt.subplots()
+    # rs["initial_score"].plot.hist(bins=20)
+    # rs["final_score"].plot.hist(bins=20)
+    
+    fig,ax=plt.subplots()
+    rs["initial_count"].plot.hist(bins=20)
+    fig,ax=plt.subplots()
+    rs["final_count"].plot.hist(bins=20)
+    
+    fig,ax=plt.subplots()
+    d=rs[rs["Alignment_Decoy"]]
+    d["initial_score"].plot.hist(bins=20)
+    d["final_score"].plot.hist(bins=20)
+    
+    fig,ax=plt.subplots()
+    t=rs[~rs["Alignment_Decoy"]]
+    t["initial_score"].plot.hist(bins=20)
+    t["final_score"].plot.hist(bins=20)
+    
+    #something is wrong with the counts!
+    
+
+    
+    #overall
+    
+    print(t.final_score.sum()/t.initial_score.sum())
+    #print((d.initial_score.sum()/t.initial_score.sum())/(d.final_score.sum()/t.final_score.sum())) #decoy fraction instead of decoy count
+    #print(d.final_score.sum()/d.initial_score.sum()) #decoy fraction instead of decoy count
+    print((t.final_score.sum()/(t.final_score.sum()+d.final_score.sum()))/(t.initial_score.sum()/(t.initial_score.sum()+d.initial_score.sum())))
+    print(rs["initial_count"].mean()/rs["final_count"].mean())
+    
+    
+    #edit this back in CHEW funs later!
+    
+    #read each SMSNet file
+    #for each scoring bin
+    
+    
+    #for top scoring....
+    
+    #%% Compare to SMSNet score
+    input_files=["C:/MP_CHEW/CHEW/Mix24/Initial_annotation/Q20518_Mix24X_SMSNET.tsv",
+    "C:/MP_CHEW/CHEW/Mix24/Initial_annotation/Q20516_Mix24X_SMSNET.tsv",
+    "C:/MP_CHEW/CHEW/Mix24/Initial_annotation/Q20517_Mix24X_160629055637_SMSNET.tsv"]
+    for input_file in input_files: 
+        if input_file.endswith("SMSNET.tsv"): #parse SMSNet outputs
+            pepdf=parse_SMSNet_output(input_file=input_file,
+                                      SMSNet_ppm=False,
+                                      SMSNet_minscore=False,
+                                      simple_unmask=True,
+                                      X_padding=False)
+
+
+
+        pepdf=pepdf[pepdf["tag"].fillna("").apply(len)>=min_length]
+        pepdf["tag"]=pepdf["tag"].str.replace("I","L").str.replace("J","L")
+        
+        
+        break
+    
+    m=pepdf.merge(rs,on="tag",how="left")
+    m["total_score"]=m["score"]
+    
+    #%% Do it with PSMs files instead
+    
+    input_files=["C:/MP_CHEW/CHEW/UniprotKB_Mix24dn/output/Q20516_Mix24X_PSMs.tsv",
+"C:/MP_CHEW/CHEW/UniprotKB_Mix24dn/output/Q20517_Mix24X_160629055637_PSMs.tsv",
+"C:/MP_CHEW/CHEW/UniprotKB_Mix24dn/output/Q20518_Mix24X_PSMs.tsv"]
+    
+    for input_file in input_files:
+        break
+    pepdf=pd.read_csv(input_file,sep="\t")
+    # pepdf=simple_unmask_fun(pepdf)
+    # m=pepdf.merge(rs,on="tag",how="left")
+    
+    #%%
+
+    
+    #DBQC peplist (more flexible input)
+    
+    
+    #DBQC CHEW PSMs (more detailed output)
+    
+    
+    
+    #%% 
+    
+    
+    
+    #%% compute bitscore ratios between final and initial
+    
+    
+    
+    #for each seq count top bitscore
+    
+    
+    #for each seq, count length in target and length in decoy
+    #or for each seq count top bitscore in target and top bitscore in decoy
+    #top bitscore decoy/ top bitscore target
+    # if missing ->1
+    
+    
+    
+        
+    #%%
+    #read SMSNet files
+    
+    
+    
+    #scoring metric
+    
+    #if EXPMass
+
 
 #%% Helper funs
 
-
-def file_len(filename):
-    with open(filename) as f:
-        for i, _ in enumerate(f):
-            pass
-    return i + 1
 
 
 def get_mgf_info(file):
@@ -2149,7 +2364,33 @@ def parse_SMSNet_output(input_file,simple_unmask,X_padding,SMSNet_ppm,SMSNet_min
     if SMSNet_ppm: pepdf=pepdf[pepdf['MassError(ppm)'].abs()<=SMSNet_ppm]
     if SMSNet_minscore: pepdf=pepdf[pepdf.Scores.str.rsplit(";",expand=True).astype(float).mean(axis=1)>=SMSNet_minscore]
     if simple_unmask: #unmask simple combinations(1 or 2)
-        pepdf=simple_unmask_fun(pepdf,X_padding=X_padding)
+        preds=pepdf["Prediction"].drop_duplicates() 
+        
+        masks=preds.str.replace(")","(",regex=False).str.split("(",regex=False).explode() 
+        masses=list(set(masks[masks.str.contains(".",regex=False)].astype(str).tolist()))
+        masses.sort()
+        
+        for m in masses:
+
+            match=simple_masks[(simple_masks["upper"]>float(m)) & (simple_masks["lower"]<float(m))]
+            combs=sum([["".join(p) for p in itertools.permutations(c)] for c in match["compositions"]],[])
+            if len(combs):
+                
+                preds=preds.str.replace("("+m+")",'"],'+str(combs)+',["',regex=False)
+            else:
+                if X_padding:
+                    preds=preds.str.replace("("+m+")",'"],'+str(["X"*math.ceil(float(m)//110)])+',["',regex=False)
+                    
+        preds='[["'+preds.str.lstrip('"],').str.rstrip('"[,')+'"]]'
+        preds=preds.str.replace('[["[','[[',regex=False).str.replace(']"]]',']]',regex=False).apply(eval)
+        preds=preds.apply(lambda x:list(itertools.product(*x))).explode().apply(lambda x: "".join(x)).rename("Prediction")
+      
+        pepdf=pepdf.rename(columns={"Prediction":"Original_Prediction"})
+        pepdf=pepdf.merge(preds,left_index=True,right_index=True,how="right").reset_index()
+
+    #select longest tag for alignment
+    pepdf["tag"]=pd.Series([max(pep[::2],key=len) for pep in pepdf["Prediction"].str.upper().str.replace("(",")",regex=False).str.split(")",regex=False)],name="longest_tag").str.strip("X")
+
     return pepdf
 
 def is_fasta(input_file):
@@ -2163,6 +2404,9 @@ def reformat_mfg(mgf_file,
                  max_charge=6,
                  minimum_ion_pairs=2):
 
+
+    proton_mass=1.007276
+    water_mass=18.01056
     with open(mgf_file,"r+") as f:
         lines=f.readlines()
         lines=[line.replace("Scan: ","scan=") if line.startswith("TITLE=") else line for line in lines] #add Scan and SEQ=
@@ -2232,12 +2476,14 @@ def read_pin(pinfile):
 #read alignment file to generator and filter on top x% scoring
 def Diamond_alignment_Reader(input_file,*,
                              diamond_output_columns=diamond_output_columns,
-         
+    
                               score_cutoff=0.9): 
     
     cdf=pd.read_csv(input_file, sep='\t', chunksize=IO_batch,names=diamond_output_columns) #read to generator
     sc=[] #dummy
     for ix,c in enumerate(cdf):
+        
+
         
         print(ix)
         
@@ -2298,14 +2544,14 @@ def weighted_lca(df,*, #dataframe with at least a column called Peptide, and ran
     lin=pd.concat(lin,axis=1)
     lcas=pd.DataFrame(df[group_on]).drop_duplicates().merge(lin,on=group_on).set_index(group_on)
     last=lcas.fillna(method="ffill",axis=1).iloc[:,-1]
-    lcas["Proteins"]=df[df[ranks].add(df[group_on],axis=0).isin(last.tolist()+last.index).any(axis=1)].groupby(group_on)[protein_column].apply(lambda x: ", ".join(list(set(x))))
+    lcas["proteins"]=df[df[ranks].add(df[group_on],axis=0).isin(last.tolist()+last.index).any(axis=1)].groupby(group_on)[protein_column].apply(lambda x: ", ".join(list(set(x))))
     
     #add back proteins with no common ancestor concensus
     no_lca=df[~df[group_on].isin(lcas.index)]
     no_lca=pd.DataFrame(no_lca.groupby(group_on)[protein_column].apply(lambda x: ", ".join(x)))
     
     
-    no_lca.columns=["Proteins"]
+    no_lca.columns=["proteins"]
     no_lca[ranks.tolist()]=[""]*len(ranks)
     lcas=pd.concat([lcas,no_lca],axis=0)
 
@@ -2313,57 +2559,6 @@ def weighted_lca(df,*, #dataframe with at least a column called Peptide, and ran
     
     return lcas.fillna("")
 
-#alternative implementation of Local denoise.
-def denoise_nodes_edf(edf, #takes an already exploded df (has no "remove" option)
-                  min_count=2,
-                  min_ratio=0.99, 
-                  denoise_ranks=["phylum","class","order","family","genus","species"]):
-
-    if type(min_ratio)!=list: min_ratio=[min_ratio]
-    if len(min_ratio)<len(denoise_ranks):
-        min_ratio+=[max(min_ratio)]*(len(denoise_ranks)-len(min_ratio)) #pad max
-        
-    if "OX" not in edf.columns: edf["OX"]=edf["Proteins"].str.split("|").apply(lambda x: x[-1])
-    if "u_ix" not in edf.columns: edf["u_ix"]=edf.index
-    
-    for ir,r in enumerate(denoise_ranks[::-1]): #reverse order from specific to unspecific
-        # print("denoising: "+r)
-        taxids=[]
-        
-        for n,tu in edf.groupby(r):
-            if len(tu)<min_count or n=="":
-                continue
-            
-            if tu["OX"].nunique()==1:
-                taxids.extend([tu["OX"].iloc[0]]) 
-            else:
-                g=pd.DataFrame(tu.groupby("OX")["u_ix"].apply(set))
-                g["l"]=g["u_ix"].apply(len)
-                g=g.sort_values(by="l",ascending=False)
-                
-                u=set()
-                ls=[0]
-                s=0
-                for ix,i in enumerate(g["u_ix"]): 
-                    u.update(i)
-                    l=len(u)
-                    ls.append(l)
-                    d=ls[-1]-ls[-2]
-                    
-                    if d<min_count: #absolute  
-                        break
-                    s+=l
-                    if 1-(d/s)>min_ratio[ir]: #relative
-                        break
-    
-                taxids.extend(g.index[:ix].tolist()) 
-        edf=edf[edf["OX"].isin(taxids)]    
-        proteins=edf["Proteins"]
-        
-
-    taxids=proteins.str.split("|").apply(lambda x: x[-1])
-
-    return list(set(proteins)), list(set(taxids))
 
 def denoise_nodes(df, #lca df 
                   min_count=2,
@@ -2376,9 +2571,9 @@ def denoise_nodes(df, #lca df
         min_ratio+=[max(min_ratio)]*(len(denoise_ranks)-len(min_ratio)) #pad max
     
     df=df.copy()
-    df["Proteins"]=df["Proteins"].str.split(", ")
-    edf=df.explode("Proteins").reset_index()
-    edf["OX"]=edf["Proteins"].str.split("|").apply(lambda x: x[-1])
+    df["proteins"]=df["proteins"].str.split(", ")
+    edf=df.explode("proteins").reset_index()
+    edf["OX"]=edf["proteins"].str.split("|").apply(lambda x: x[-1])
     dfs=[df]
     
     for ir,r in enumerate(denoise_ranks[::-1]): #reverse order from specific to unspecific
@@ -2413,17 +2608,17 @@ def denoise_nodes(df, #lca df
     
                 taxids.extend(g.index[:ix].tolist()) 
         edf=edf[edf["OX"].isin(taxids)]
-        dfs.append(edf.groupby("u_ix")["Proteins"].apply(list).rename("Proteins"+str(ir)))
+        dfs.append(edf.groupby("u_ix")["proteins"].apply(list).rename("proteins"+str(ir)))
         #print(edf["u_ix"].nunique())
     
     if remove:
-        proteins=edf["Proteins"]
+        proteins=edf["proteins"]
         
     else:
         cdf=pd.concat(dfs,axis=1)
-        protcols=[i for i in cdf.columns if i.startswith("Proteins")]
-        df["Proteins"]=cdf[protcols].ffill(axis=1)[protcols[-1]] #if keep
-        proteins=df.explode("Proteins")["Proteins"]
+        protcols=[i for i in cdf.columns if i.startswith("proteins")]
+        df["proteins"]=cdf[protcols].ffill(axis=1)[protcols[-1]] #if keep
+        proteins=df.explode("proteins")["proteins"]
     
     
     taxids=proteins.str.split("|").apply(lambda x: x[-1])
@@ -2460,83 +2655,6 @@ def merge_files(files,output_path=False):
             shutil.copyfileobj(open(file,'rb'), o)
             
     return output_path
-
-#helper function for testing not really used by script
-def Unique_fasta(input_file):
-#source: https://stackoverflow.com/questions/66462611/remove-duplicated-sequences-in-fasta-with-python   
-
-    output_file=input_file.replace(".fa","_unique.fa")
-    chunks=chunk_gen(SeqIO.parse(input_file, "fasta"))
-    seen = set()
-    
-    
-    with open(output_file,"w") as f: #clears file if exists
-        pass
-    with open(output_file, "a") as f:
- 
-        for chunk in chunks:
-        
-            records = []
-            for record in chunk:  
-    
-                if record.name not in seen:
-    
-                    seen.add(record.name)
-                    records.append(record)
-                    
-            df=pd.DataFrame([[rec.description,str(rec.seq)] for rec in records],columns=["description","seq"])
-            f.write("\n".join(">"+df.description+"\n"+df.seq)+"\n")
-
-    return output_file, len(seen) 
-    
-
-def simple_unmask_fun(pepdf,X_padding=False):    
-
-    #make compatible with CHEW PSMs style output
-    if "Peptide" in pepdf.columns:
-        pepdf.loc[pepdf["Prediction"].isnull(),"Peptide"]=pepdf.loc[pepdf["Prediction"].isnull(),"Prediction"]
-    
-    preds=pepdf["Prediction"].drop_duplicates() 
-    
-
-    
-    masks=preds.str.replace(")","(",regex=False).str.split("(",regex=False)
-    
-    #subtract water mass from Cterm tags
-    for ix,i in enumerate(masks):
-        i=[x for x in i if x!=""]
-        if "." in i[-1]:
-            i[-1]=str(float(i[-1])-water_mass)
-        masks.iloc[ix]=i
-    
-    
-    masks=masks.explode() 
-    masses=list(set(masks[masks.str.contains(".",regex=False)].astype(str).tolist()))
-    masses.sort()
-    
-    for m in masses:
-
-        match=simple_masks[(simple_masks["upper"]>float(m)) & (simple_masks["lower"]<float(m))]
-        combs=sum([["".join(p) for p in itertools.permutations(c)] for c in match["compositions"]],[])
-        if len(combs):
-            
-            preds=preds.str.replace("("+m+")",'"],'+str(combs)+',["',regex=False)
-        else:
-            if X_padding:
-                preds=preds.str.replace("("+m+")",'"],'+str(["X"*math.ceil(float(m)//110)])+',["',regex=False)
-                
-    preds='[["'+preds.str.lstrip('"],').str.rstrip('"[,')+'"]]'
-    preds=preds.str.replace('[["[','[[',regex=False).str.replace(']"]]',']]',regex=False).apply(eval)
-    preds=preds.apply(lambda x:list(itertools.product(*x))).explode().apply(lambda x: "".join(x)).rename("Prediction")
-  
-    pepdf=pepdf.rename(columns={"Prediction":"Original_Prediction"})
-    pepdf=pepdf.merge(preds,left_index=True,right_index=True,how="right").reset_index()
-
-    #select longest tag for alignment
-    pepdf["tag"]=pd.Series([max(pep[::2],key=len) for pep in pepdf["Prediction"].str.upper().str.replace("(",")",regex=False).str.split(")",regex=False)],name="longest_tag").str.strip("X")
-    
-    
-    return pepdf
 
 #%%
 

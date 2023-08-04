@@ -56,7 +56,7 @@ max_evalue=10
 Top_score_fraction=0.9 #in case of multiple top candidates retain the top scoring fraction
 
 #Pre LCA filter
-Frequency_prefilter=2,  # 2   Static prefiler cutoff, taxa should have more PSMs 
+Frequency_prefilter=2   # 2   Static prefiler cutoff, taxa should have more PSMs 
 Precision_prefilter=0.7 # 0.7 Target Decoy precision based denoising pre LCA filter
 prefilter_remove=False  # if prefilter completly removes a scan, retain taxa?
 
@@ -82,20 +82,19 @@ final_denoise_remove=True
 
 #%% Update parameter dict (kws)
            
-### Define keyword dictionary 
+#setup shared parameters and tables 
 cvars=set([str(k)+":#|%"+str(v)  for k,v in locals().copy().items() if k!="svars"])
 kws={i.split(":#|%")[0]:i.split(":#|%")[1]   for i in list(cvars-svars)}
 
 kws=parse_kws(cvars,svars,script_name="RefineDB")
-
-
 from CHEW_funs import *
 
+taxdf=load_taxdf(taxdf_path)
+kws.update({"taxdf":taxdf})
+ 
 locals().update(kws)
 
-taxdf=read_table(taxdf_path,Keyword="OX").set_index("OX")
-taxdf.index=taxdf.index.astype(str)
-kws.update({"taxdf":taxdf}) 
+
 
 
 
@@ -106,6 +105,7 @@ tlca,database_path,DB_in_mem=refine_database(input_files=input_files,
                                               database_path=database_path)
 
 kws.update({"output_folder":"refine_final"})
+locals().update(kws)
 
 proteins,taxids=denoise_nodes(tlca,min_ratio=final_min_ratio,denoise_ranks=final_denoise_ranks,remove=final_denoise_remove)
 

@@ -13,9 +13,11 @@ from pathlib import Path
 import pandas as pd
 from collections import Counter
 
-
+from config import *
 
 #%%
+
+
 
 def parse_kws(cvars,svars,script_name=""):
     kws=dict()
@@ -47,7 +49,7 @@ def parse_kws(cvars,svars,script_name=""):
             kws.update({k:v})
     
     
-    print(kws)
+    # print(kws)
 
 
 
@@ -56,8 +58,9 @@ def parse_kws(cvars,svars,script_name=""):
     
     ds=[]
     for k,v in kws.items():
-        ds.append(pd.DataFrame([[k,v]])).fillna("")
-    kws_df=pd.concat(ds)
+        print(k,v)
+        ds.append(pd.DataFrame([[k,v]]))
+    kws_df=pd.concat(ds).fillna("")
     kws_df.columns=["Key","Value"]
     kws_df.set_index("Key").to_csv(kws_filename,sep="\t")
     
@@ -154,3 +157,18 @@ def load_variables(file):
             
     return dict(zip(tab.Key, vs))
     
+def load_taxdf(taxdf_path):
+    
+    taxdf=read_table(taxdf_path,Keyword="OX").set_index("OX")
+    
+    #make sure NCBI taxids are formatted properly
+    taxdf.index=taxdf.index.astype(str)
+    idx=taxdf.index.tolist()
+    for ix,i in enumerate(idx):
+        try:
+            idx[ix]=str(int(pd.to_numeric(i)))
+        except:
+            pass
+    taxdf.index=idx
+    
+    return taxdf
