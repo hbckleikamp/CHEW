@@ -322,7 +322,7 @@ def extract(path): #path to folder
         
 def extract_subfolders(folder):
 
-    for subdir, dirs, files in os.walk(path):
+    for subdir, dirs, files in os.walk(folder):
         for d in dirs:
             if os.path.isdir(d):
                 extract(d)
