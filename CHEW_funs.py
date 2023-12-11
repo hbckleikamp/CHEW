@@ -2108,7 +2108,9 @@ def get_mgf_info(file,add_peaks=False):
 
     with open(file,"r") as f:
         t=f.readlines()
-        
+
+
+
     scans=[]
     peaks=[]
     ix=0
@@ -2116,9 +2118,12 @@ def get_mgf_info(file,add_peaks=False):
         
         i=i.split("\n")[0]
         
+        if i.startswith("BEGIN IONS"):
+            scan=ix
+        
         
         if i.startswith("TITLE="):
-            scan=ix
+            
             if "scan=" in i: scan=i.split("scan=")[1].strip()
             if "Scan:" in i: scan=i.split("Scan:")[1].strip()
         
@@ -2135,11 +2140,16 @@ def get_mgf_info(file,add_peaks=False):
             
         
         if add_peaks:
-            if i[0].isdigit():
-                peaks.append(i.split())
+            if len(i):
+                if i[0].isdigit():
+                    peaks.append(i.split())
             
         if i.startswith("END IONS"):
+            
+            
+            
             if add_peaks:
+                
                 scans.append([scan,mass,intensity,charge,peaks])
                 peaks=[]
                 
@@ -2148,10 +2158,12 @@ def get_mgf_info(file,add_peaks=False):
                 
     if add_peaks:
         scandf=pd.DataFrame(scans,columns=["ScanNr","m/z","intensity","charge","peaks"])
+
     else:
         scandf=pd.DataFrame(scans,columns=["ScanNr","m/z","intensity","charge"]).astype(float)
-    return scandf
 
+        
+    return scandf
 
 def parse_SMSNet_output(input_file,simple_unmask,X_padding,SMSNet_ppm,SMSNet_minscore):
     
