@@ -2110,15 +2110,17 @@ def get_mgf_info(file):
     with open(file,"r") as f:
         t=f.readlines()
 
-
-
     scans=[]
-    for i in t:
+    ix=0
+    for ix,i in enumerate(t):
+        
         i=i.split("\n")[0]
         
         
         if i.startswith("TITLE="):
-            scan=i.split("scan=")[1]
+            scan=ix
+            if "scan=" in i: scan=i.split("scan=")[1].strip()
+            if "Scan:" in i: scan=i.split("Scan:")[1].strip()
         
         elif i.startswith("PEPMASS"):
        
